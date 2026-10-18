@@ -215,18 +215,21 @@ function configurarSocketsPrivados() {
     if (!socket) socket = io();
     
     socket.emit('registrar_usuario', crmUserId);
-
-    socket.on(`wa_status_${crmUserId}`, (status) => {
+socket.on(`wa_status_${crmUserId}`, (status) => {
         const waText = document.getElementById('wa-status');
         const btnQR = document.getElementById('btn-show-qr');
         
         if(waText) waText.innerText = `WhatsApp: ${status}`;
         
-        if (status === 'Conectado') {
+        // 🚀 CORRECCIÓN: Si está sincronizando o conectado, ocultamos el QR inmediatamente
+        if (status === 'Sincronizando chats...' || status === 'Conectado') {
             if(waText) waText.style.color = 'green';
             if(btnQR) btnQR.style.display = 'none';
             cerrarModalQR(); 
-            verificarNumerosPendientes();
+            
+            // Solo empezamos a verificar números cuando esté 100% conectado
+            if (status === 'Conectado') verificarNumerosPendientes();
+            
         } else {
             if(waText) waText.style.color = 'orange';
             if(btnQR) btnQR.style.display = 'block'; 

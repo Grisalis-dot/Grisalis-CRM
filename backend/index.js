@@ -64,17 +64,23 @@ function iniciarWhatsAppParaUsuario(userId, socket = null) {
         }
     });
 
-    client.on('qr', (qr) => {
+   client.on('qr', (qr) => {
         waQrCodes.set(userId, qr); 
         waStatuses.set(userId, 'Escanea el QR para conectar');
-        
         io.emit(`wa_qr_${userId}`, qr); 
         io.emit(`wa_status_${userId}`, 'Escanea el QR para conectar');
     });
 
+    // 🚀 NUEVO: Respuesta inmediata al escanear
+    client.on('authenticated', () => {
+        console.log(`WhatsApp autenticado (cargando mensajes...) para ${userId}`);
+        waQrCodes.delete(userId); // Borramos el QR
+        waStatuses.set(userId, 'Sincronizando chats...');
+        io.emit(`wa_status_${userId}`, 'Sincronizando chats...');
+    });
+
     client.on('ready', () => {
         console.log(`¡WhatsApp conectado para el usuario ${userId}!`);
-        waQrCodes.delete(userId); 
         waStatuses.set(userId, 'Conectado');
         io.emit(`wa_status_${userId}`, 'Conectado');
     });
