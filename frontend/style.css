@@ -1,0 +1,19 @@
+body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
+.layout { display: flex; gap: 20px; height: 90vh; }
+.tabla-container { flex: 2; background: white; padding: 20px; border-radius: 10px; overflow-y: auto; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+.chat-container { flex: 1; background: white; padding: 0; border-radius: 10px; display: flex; flex-direction: column; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border: 2px solid #1a73e8; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+th { background: #1a73e8; color: white; }
+tr:hover { background: #f8f9fa; }
+.btn-chat { background: #28a745; color: white; border: none; padding: 8px; border-radius: 5px; cursor: pointer; }
+/* Estilos del Chat */
+.chat-header { background: #1a73e8; color: white; padding: 15px; border-radius: 8px 8px 0 0; }
+.chat-header h2, .chat-header p { margin: 0; }
+.chat-messages { flex: 1; padding: 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px;}
+.msg { max-width: 80%; padding: 10px; border-radius: 8px; clear: both; }
+.msg-out { background: #dcf8c6; align-self: flex-end; }
+.msg-in { background: white; align-self: flex-start; }
+.chat-input { display: flex; padding: 15px; border-top: 1px solid #ddd; background: #f0f0f0;}
+.chat-input textarea { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #ccc; resize: none; height: 50px; }
+.chat-input button { background: #1a73e8; color: white; border: none; padding: 10px 20px; margin-left: 10px; border-radius: 5px; cursor: pointer; }

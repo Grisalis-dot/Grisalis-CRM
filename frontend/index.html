@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Prospectos - Grisalis</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Gestión de Prospectos - Grisalis</h1>
+        <p id="wa-status" style="color: orange; font-weight: bold;">WhatsApp: Esperando conexión...</p>
+    </header>
+
+    <main style="display: flex; gap: 20px; padding: 20px;">
+        <!-- Panel Izquierdo: Tabla y Controles -->
+        <section style="flex: 2; overflow-x: auto;">
+            
+            <!-- Asistente IA -->
+            <div class="ia-panel" style="background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
+                <strong>🤖 Asistente IA:</strong>
+                <input type="text" id="ia-nicho" placeholder="Ej. Clínicas Dentales" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;">
+                <input type="text" id="ia-ciudad" placeholder="Ej. Barranquilla" value="Barranquilla" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;">
+                <button onclick="generarConIA()" id="btn-ia" style="background: #1a73e8; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                    Buscar y Agregar
+                </button>
+            </div>
+
+            <!-- Buscador en tiempo real -->
+            <div class="search-panel" style="margin-bottom: 15px;">
+                <input type="text" id="buscador" onkeyup="filtrarTabla()" placeholder="🔍 Buscar empresa, nicho o teléfono..." style="width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box;">
+            </div>
+
+            <!-- Tabla de Prospectos con TODAS las columnas -->
+            <table id="prospectos-table" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: #0044cc; color: white; text-align: left;">
+                        <th style="padding: 10px;">Empresa</th>
+                        <th style="padding: 10px;">Nicho</th>
+                        <th style="padding: 10px;">Contacto</th>
+                        <th style="padding: 10px;">Correo</th>
+                        <th style="padding: 10px;">Dirección</th>
+                        <th style="padding: 10px;">Observaciones</th>
+                        <th style="padding: 10px;">Estado</th>
+                        <th style="padding: 10px;">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="8" style="padding: 10px; text-align: center;">Cargando datos...</td></tr>
+                </tbody>
+            </table>
+
+            <!-- Controles de Paginación -->
+            <div id="pagination-controls" style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+                <button onclick="cambiarPagina(-1)" id="btn-prev" style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px;">⬅ Anterior</button>
+                <span id="page-info" style="font-weight: bold;">Página 1 de 1</span>
+                <button onclick="cambiarPagina(1)" id="btn-next" style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px;">Siguiente ➡</button>
+            </div>
+
+        </section>
+
+        <!-- Panel Derecho: Chat -->
+        <aside id="chat-panel" style="flex: 1; background: #f0f0f0; border-radius: 8px; display: none; flex-direction: column; height: 80vh;">
+            <div id="chat-header" style="background: #005c4b; color: white; padding: 15px; border-radius: 8px 8px 0 0;">
+                <h3 id="chat-nombre" style="margin: 0;">Selecciona un cliente</h3>
+                <span id="chat-numero" style="font-size: 12px;"></span>
+            </div>
+            
+            <div id="chat-messages" style="flex: 1; padding: 15px; overflow-y: auto; background: #efeae2; display: flex; flex-direction: column; gap: 10px;">
+                <!-- Los mensajes aparecerán aquí -->
+            </div>
+
+            <div style="padding: 15px; background: white; border-radius: 0 0 8px 8px; display: flex; gap: 10px;">
+                <textarea id="chat-input" placeholder="Escribe un mensaje..." style="flex: 1; resize: none; border-radius: 5px; padding: 10px; border: 1px solid #ccc;"></textarea>
+                <button onclick="enviarMensaje()" style="background: #1a73e8; color: white; border: none; padding: 0 20px; border-radius: 5px; cursor: pointer;">Enviar</button>
+            </div>
+        </aside>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

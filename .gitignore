@@ -1,0 +1,18 @@
+# Dependencias de Node.js (¡súper pesado, no se sube!)
+node_modules/
+backend/node_modules/
+
+# Archivos de entorno (Tus llaves secretas)
+.env
+backend/.env
+
+# Sesión de WhatsApp (Para que no subas tu inicio de sesión)
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Excel local (Ya todo está en Supabase)
+data/*.xlsx
