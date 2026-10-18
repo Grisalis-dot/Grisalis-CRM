@@ -27,19 +27,16 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 // 🧠 MOTOR MULTI-WHATSAPP MEJORADO (CON MEMORIA DE QR)
 // ==========================================
 const waClients = new Map();
-const waQrCodes = new Map();   // 👈 Guardará temporalmente el QR generado por cada vendedor
-const waStatuses = new Map();  // 👈 Guardará el estado real ("Conectado" o "Esperando QR")
+const waQrCodes = new Map();   
+const waStatuses = new Map();  
 const creandoProspectos = new Set();
 
 function iniciarWhatsAppParaUsuario(userId, socket = null) {
-    // Si el usuario ya tiene una sesión iniciándose o corriendo
     if (waClients.has(userId)) {
         if (socket) {
-            // Le mandamos el estado real apenas abre la página
             const statusActual = waStatuses.get(userId) || 'Iniciando servidor...';
             socket.emit(`wa_status_${userId}`, statusActual);
             
-            // 👈 ¡MAGIA! Si ya se había generado un QR y está pendiente, se lo enviamos de inmediato a la pantalla
             if (waQrCodes.has(userId)) {
                 socket.emit(`wa_qr_${userId}`, waQrCodes.get(userId));
             }
@@ -51,7 +48,6 @@ function iniciarWhatsAppParaUsuario(userId, socket = null) {
     waStatuses.set(userId, 'Iniciando servidor...');
     if (socket) socket.emit(`wa_status_${userId}`, 'Iniciando servidor...');
 
-    // CORRECCIÓN: Configuración extrema de ahorro de memoria para evitar que Render explote (Error 502)
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: userId }), 
         puppeteer: { 
@@ -59,17 +55,17 @@ function iniciarWhatsAppParaUsuario(userId, socket = null) {
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage', // <--- Evita que la memoria caché del servidor se llene
-                '--disable-accelerated-2d-canvas', // <--- Apaga gráficos innecesarios
+                '--disable-dev-shm-usage', 
+                '--disable-accelerated-2d-canvas', 
                 '--no-first-run',
                 '--no-zygote',
-                '--disable-gpu' // <--- Render no tiene tarjeta gráfica, esto evita que intente buscarla
+                '--disable-gpu' 
             ] 
         }
     });
 
     client.on('qr', (qr) => {
-        waQrCodes.set(userId, qr); // Guardamos el QR en memoria
+        waQrCodes.set(userId, qr); 
         waStatuses.set(userId, 'Escanea el QR para conectar');
         
         io.emit(`wa_qr_${userId}`, qr); 
@@ -78,18 +74,23 @@ function iniciarWhatsAppParaUsuario(userId, socket = null) {
 
     client.on('ready', () => {
         console.log(`¡WhatsApp conectado para el usuario ${userId}!`);
-        waQrCodes.delete(userId); // Borramos el QR de la memoria, ya no se necesita
+        waQrCodes.delete(userId); 
         waStatuses.set(userId, 'Conectado');
         io.emit(`wa_status_${userId}`, 'Conectado');
     });
 
-    // Detectamos si la sesión se cierra desde el teléfono para pedir QR nuevamente
-    client.on('disconnected', (reason) => {
+    // 🛡️ CORRECCIÓN: Fuga de memoria. Apagamos el navegador si se desvincula la cuenta.
+    client.on('disconnected', async (reason) => {
         console.log(`WhatsApp desconectado para ${userId}: ${reason}`);
         waQrCodes.delete(userId);
         waStatuses.set(userId, 'Desconectado (Recarga la página)');
         io.emit(`wa_status_${userId}`, 'Desconectado (Recarga la página)');
         waClients.delete(userId);
+        try {
+            await client.destroy();
+        } catch(e) {
+            console.error("Error limpiando memoria:", e.message);
+        }
     });
 
     client.on('message', async msg => {
@@ -101,7 +102,6 @@ function iniciarWhatsAppParaUsuario(userId, socket = null) {
     return client;
 }
 
-// Lógica separada para procesar mensajes y clasificar con IA
 async function procesarMensajeEntrante(msg, userId, client) {
     const contact = await msg.getContact();
     let numeroLimpio = contact.number || msg.from.replace('@c.us', '');
@@ -175,10 +175,7 @@ app.post('/api/login', async (req, res) => {
 
         if (data.password === password) {
             const token = jwt.sign({ id: data.id, usuario: data.usuario, rol: data.rol }, process.env.JWT_SECRET, { expiresIn: '12h' });
-            
-            // Arrancamos WhatsApp silenciosamente al validar contraseña
             iniciarWhatsAppParaUsuario(data.id);
-            
             res.json({ success: true, token, rol: data.rol, id: data.id });
         } else {
             res.status(401).json({ success: false, error: 'Contraseña incorrecta' });
@@ -198,7 +195,6 @@ function verificarToken(req, res, next) {
     });
 }
 
-// 🛡️ Filtro estricto: Solo deja pasar a los administradores
 function soloAdmin(req, res, next) {
     if (req.user.rol !== 'admin') return res.status(403).json({ error: 'Prohibido. Solo administradores.' });
     next();
@@ -207,14 +203,12 @@ function soloAdmin(req, res, next) {
 // ==========================================
 // 👥 MÓDULO DE GESTIÓN DE USUARIOS
 // ==========================================
-// Leer todos los usuarios
 app.get('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
     const { data, error } = await supabase.from('usuarios').select('id, usuario, rol, creado_en').order('creado_en', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
 });
 
-// Crear nuevo usuario
 app.post('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
     const { usuario, password, rol } = req.body;
     const { data, error } = await supabase.from('usuarios').insert([{ usuario, password, rol }]).select().single();
@@ -222,20 +216,16 @@ app.post('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
     res.json({ success: true, data });
 });
 
-// Editar usuario (rol, nombre o contraseña)
 app.put('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
     const { id } = req.params;
     const { usuario, password, rol } = req.body;
-    
     let updateData = { usuario, rol };
-    if (password) updateData.password = password; // Si envía contraseña, la actualizamos
-
+    if (password) updateData.password = password; 
     const { error } = await supabase.from('usuarios').update(updateData).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
 
-// Eliminar usuario
 app.delete('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
     const { id } = req.params;
     const { error } = await supabase.from('usuarios').delete().eq('id', id);
@@ -248,7 +238,7 @@ app.delete('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
 // ==========================================
 app.get('/api/prospectos', verificarToken, async (req, res) => {
     try {
-        let query = supabase.from('prospectos').select('*, usuarios(usuario)').order('creado_en', { ascending: false });
+        let query = supabase.from('prospectos').select('*, usuarios!vendedor_id(usuario)').order('creado_en', { ascending: false });
         
         if (req.user.rol !== 'admin') {
             query = query.eq('vendedor_id', req.user.id);
@@ -267,7 +257,7 @@ app.get('/api/prospectos', verificarToken, async (req, res) => {
             'Observaciones': p.observaciones,
             'Mensaje de Acercamiento': p.mensaje_acercamiento,
             'Estado': p.estado,
-            'Vendedor': p.usuarios ? p.usuarios.usuario : 'Sin asignar', 
+            'Vendedor': (p.usuarios && p.usuarios.usuario) ? p.usuarios.usuario : 'Sin asignar', 
             'vendedor_id': p.vendedor_id
         }));
         res.json(prospectosAdaptados);
@@ -291,6 +281,7 @@ app.get('/api/mensajes/:prospecto_id', verificarToken, async (req, res) => {
     } catch (error) { res.status(500).json({ error: 'Error cargando historial' }); }
 });
 
+// 🛡️ CORRECCIÓN: Ruta segura para verificación de números
 app.get('/api/verificar-numero/:numero', verificarToken, async (req, res) => {
     try {
         const numeroOriginal = req.params.numero;
@@ -298,8 +289,12 @@ app.get('/api/verificar-numero/:numero', verificarToken, async (req, res) => {
         const numeroLimpio = numeroOriginal.replace(/\D/g, '');
         if (!numeroLimpio) return res.json({ valido: false });
         
+        // Si no está conectado 100%, le decimos a la UI que espere, no crasheamos el server
+        const status = waStatuses.get(req.user.id);
+        if (status !== 'Conectado') return res.status(503).json({ error: 'Iniciando WA' });
+
         const client = waClients.get(req.user.id);
-        if (!client) return res.json({ valido: false });
+        if (!client) return res.status(503).json({ error: 'Iniciando WA' });
 
         const contactoValido = await client.getNumberId(numeroLimpio);
         res.json({ valido: !!contactoValido }); 
@@ -353,7 +348,7 @@ app.delete('/api/prospectos/:id', verificarToken, async (req, res) => {
 io.on('connection', (socket) => {
     socket.on('registrar_usuario', (userId) => {
         socket.join(`sala_${userId}`); 
-        iniciarWhatsAppParaUsuario(userId, socket); // 👈 Le pasamos el socket para que mande el QR directo
+        iniciarWhatsAppParaUsuario(userId, socket); 
     });
 
     socket.on('enviar_mensaje', async (data) => {

@@ -70,12 +70,10 @@ async function iniciarSesion() {
         const data = await res.json();
         
         if (data.success) {
-            // Guardamos todo en local
             localStorage.setItem('crm_token', data.token);
             localStorage.setItem('crm_user_id', data.id);
             localStorage.setItem('crm_user_role', data.rol);
             localStorage.setItem('crm_user_name', usuario);
-            
             arrancarApp();
         } else {
             errorMsg.innerText = data.error || "Credenciales incorrectas";
@@ -104,12 +102,10 @@ function arrancarApp() {
     if (loginBox) loginBox.style.display = 'none';
     document.querySelector('header').style.display = 'block';
     
-    // Si es Administrador, le mostramos el botón de Usuarios
     if (crmUserRole === 'admin') {
         document.getElementById('btn-admin-panel').style.display = 'inline-block';
     }
 
-    // Por defecto mostramos el CRM principal
     document.getElementById('crm-main').style.display = 'flex';
     document.getElementById('admin-panel').style.display = 'none';
 
@@ -126,10 +122,8 @@ function arrancarApp() {
 // 📡 SOCKETS Y CÓDIGO QR
 // ==========================================
 function configurarSocketsPrivados() {
-    // Le avisamos al backend que estamos en línea
     socket.emit('registrar_usuario', crmUserId);
 
-    // Escuchamos NUESTRO estado de WhatsApp
     socket.on(`wa_status_${crmUserId}`, (status) => {
         const waText = document.getElementById('wa-status');
         const btnQR = document.getElementById('btn-show-qr');
@@ -146,11 +140,9 @@ function configurarSocketsPrivados() {
         }
     });
 
-   // Escuchamos NUESTRO código QR y lo generamos localmente sin APIs externas
     socket.on(`wa_qr_${crmUserId}`, (qrString) => {
         const qrImage = document.getElementById('qr-image');
         
-        // Usamos la librería local para generar la imagen de forma segura y evitar AdBlockers
         QRCode.toDataURL(qrString, { width: 250, margin: 2 }, function (err, url) {
             if (!err) {
                 qrImage.src = url;
@@ -161,7 +153,6 @@ function configurarSocketsPrivados() {
         });
     });
 
-    // Escuchamos recargas y mensajes dirigidos a NOSOTROS
     socket.on(`recargar_prospectos_${crmUserId}`, () => { cargarProspectos(); });
     socket.on(`nuevo_mensaje_${crmUserId}`, (data) => { procesarMensajeVisual(data); });
 }
@@ -230,7 +221,6 @@ function pintarTabla() {
     const tbody = document.querySelector('#prospectos-table tbody');
     tbody.innerHTML = '';
     
-    // Si eres Admin, mostramos la columna del vendedor
     const colVendedorTh = document.getElementById('columna-vendedor');
     if (colVendedorTh) colVendedorTh.style.display = crmUserRole === 'admin' ? 'table-cell' : 'none';
 
@@ -274,7 +264,6 @@ function pintarTabla() {
             }
         }
 
-        // 🛡️ REGLA: Si es Vendedor, no mostramos el botón Eliminar
         let botonEliminarHTML = '';
         if (crmUserRole === 'admin') {
             botonEliminarHTML = `<button style="background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer;" onclick="eliminarProspecto('${p.id}', ${globalIndex})">🗑️</button>`;
@@ -309,6 +298,7 @@ function pintarTabla() {
     verificarNumerosPendientes();
 }
 
+// 🛡️ CORRECCIÓN: Manejo silencioso de errores 503
 async function verificarNumerosPendientes() {
     const startIndex = (currentPage - 1) * rowsPerPage;
     const endIndex = startIndex + rowsPerPage;
@@ -319,12 +309,17 @@ async function verificarNumerosPendientes() {
             try {
                 const numCodificado = encodeURIComponent(p['Contacto (Tel / WhatsApp)']);
                 const res = await fetchConToken(`/api/verificar-numero/${numCodificado}`);
+                
+                if (!res.ok) continue; // Si WhatsApp no está listo, saltamos al siguiente
+
                 const data = await res.json();
-                p.wa_valido = data.valido; 
-                const iconSpan = document.getElementById(`wa-icon-${p.id}`);
-                if (iconSpan) {
-                    iconSpan.innerText = data.valido ? '🟢' : '🔴';
-                    iconSpan.title = data.valido ? 'Tiene WhatsApp' : 'No tiene WhatsApp';
+                if (typeof data.valido === 'boolean') {
+                    p.wa_valido = data.valido; 
+                    const iconSpan = document.getElementById(`wa-icon-${p.id}`);
+                    if (iconSpan) {
+                        iconSpan.innerText = data.valido ? '🟢' : '🔴';
+                        iconSpan.title = data.valido ? 'Tiene WhatsApp' : 'No tiene WhatsApp';
+                    }
                 }
             } catch(e) {}
         }
@@ -413,7 +408,7 @@ function enviarMensaje() {
     if (mensaje.trim() === '') return;
 
     socket.emit('enviar_mensaje', {
-        userId: crmUserId, // Enviamos el ID del vendedor que dispara el mensaje
+        userId: crmUserId, 
         numero: prospecto['Contacto (Tel / WhatsApp)'],
         mensaje: mensaje,
         prospecto_id: prospecto.id 
@@ -474,6 +469,7 @@ function mostrarNotificacion(titulo, mensaje) {
     toast.style.opacity = '1';
     setTimeout(() => { toast.style.opacity = '0'; }, 5000);
 }
+
 // ==========================================
 // 👥 PANEL DE ADMINISTRACIÓN DE USUARIOS
 // ==========================================
@@ -492,7 +488,7 @@ function toggleAdminPanel() {
         adminView.style.display = 'flex';
         btn.innerText = "🏠 Volver al CRM";
         btn.style.background = "#1a73e8";
-        cargarUsuarios(); // Cargamos los datos de la tabla
+        cargarUsuarios(); 
     }
 }
 
@@ -504,7 +500,6 @@ async function cargarUsuarios() {
         tbody.innerHTML = '';
         
         usuarios.forEach(u => {
-            // Impedimos que el Admin maestro (el primero) se borre a sí mismo por accidente
             const isMe = (u.id === crmUserId);
             
             tbody.innerHTML += `
