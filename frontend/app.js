@@ -1,4 +1,4 @@
-const socket = io();
+let socket; // Declaramos el socket pero no lo encendemos hasta iniciar sesión
 let prospectosGlobal = [];
 let prospectosFiltrados = [];
 let chatActualIndex = null;
@@ -27,166 +27,83 @@ async function fetchConToken(url, opciones = {}) {
 }
 
 function mostrarPantallaLogin() {
-    // Ocultar la app principal
-    document.querySelector('header').style.display = 'none';
-    const mainCrm = document.getElementById('crm-main');
-    const adminPanel = document.getElementById('admin-panel');
-    if(mainCrm) mainCrm.style.display = 'none';
-    if(adminPanel) adminPanel.style.display = 'none';
+    // 🛡️ CORRECCIÓN: Ocultar la app principal de forma segura comprobando que existan
+    try {
+        const header = document.querySelector('header');
+        if (header) header.style.display = 'none';
+        
+        const main = document.querySelector('main');
+        if (main) main.style.display = 'none';
+
+        const mainCrm = document.getElementById('crm-main');
+        if (mainCrm) mainCrm.style.display = 'none';
+
+        const adminPanel = document.getElementById('admin-panel');
+        if (adminPanel) adminPanel.style.display = 'none';
+    } catch (e) {
+        console.warn("Aviso: Ocultando elementos del layout base.");
+    }
     
     // Crear la pantalla de login si no existe
     if (!document.getElementById('login-container')) {
         const loginHTML = `
             <div id="login-container" style="display: flex; justify-content: center; align-items: center; min-height: 100vh; background: linear-gradient(135deg, #2a266b 0%, #100f2c 100%); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; position: fixed; top: 0; left: 0; width: 100%; z-index: 10000;">
                 <style>
-                    /* Fondo con ondas/figuras abstractas emulando el diseño */
                     #login-container::before {
-                        content: '';
-                        position: absolute;
-                        width: 800px; height: 800px;
+                        content: ''; position: absolute; width: 800px; height: 800px;
                         background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(0,0,0,0) 60%);
-                        top: -200px; left: -200px;
-                        z-index: -1;
+                        top: -200px; left: -200px; z-index: -1;
                     }
                     #login-container::after {
-                        content: '';
-                        position: absolute;
-                        width: 600px; height: 600px;
+                        content: ''; position: absolute; width: 600px; height: 600px;
                         background: radial-gradient(circle, rgba(156,39,176,0.1) 0%, rgba(0,0,0,0) 60%);
-                        bottom: -100px; right: -100px;
-                        z-index: -1;
+                        bottom: -100px; right: -100px; z-index: -1;
                     }
-                    /* Tarjeta Glassmorphism */
                     .login-card {
-                        display: flex;
-                        width: 900px;
-                        max-width: 95%;
-                        background: rgba(255, 255, 255, 0.03);
-                        border: 1px solid rgba(255, 255, 255, 0.08);
-                        border-radius: 20px;
-                        box-shadow: 0 25px 50px rgba(0,0,0,0.3);
-                        backdrop-filter: blur(12px);
-                        overflow: hidden;
+                        display: flex; width: 900px; max-width: 95%;
+                        background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);
+                        border-radius: 20px; box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+                        backdrop-filter: blur(12px); overflow: hidden;
                     }
-                    /* Columna Izquierda (Ilustración/Logo) */
                     .login-left {
-                        flex: 1;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        padding: 40px;
+                        flex: 1; display: flex; justify-content: center; align-items: center; padding: 40px;
                         background: radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, transparent 70%);
                     }
-                    .login-left img {
-                        max-width: 80%;
-                        animation: float 4s ease-in-out infinite;
-                    }
+                    .login-left img { max-width: 80%; animation: float 4s ease-in-out infinite; }
                     @keyframes float {
                         0% { transform: translateY(0px); }
                         50% { transform: translateY(-15px); }
                         100% { transform: translateY(0px); }
                     }
-                    /* Columna Derecha (Formulario) */
-                    .login-right {
-                        flex: 1;
-                        padding: 50px 60px;
-                        color: white;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
+                    .login-right { flex: 1; padding: 50px 60px; color: white; display: flex; flex-direction: column; justify-content: center; }
+                    .login-logo { font-size: 26px; font-weight: 800; text-align: center; margin-bottom: 35px; display: flex; align-items: center; justify-content: center; gap: 10px; letter-spacing: 1px; }
+                    .form-group { margin-bottom: 22px; }
+                    .form-group label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; font-weight: 500; color: #e5e7eb; }
+                    .form-group input[type="text"], .form-group input[type="password"] {
+                        width: 100%; padding: 14px 15px; border: none; border-radius: 8px; background: white; color: #1f2937; font-size: 14px; box-sizing: border-box; outline: none; transition: box-shadow 0.3s;
                     }
-                    .login-logo {
-                        font-size: 26px;
-                        font-weight: 800;
-                        text-align: center;
-                        margin-bottom: 35px;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        gap: 10px;
-                        letter-spacing: 1px;
-                    }
-                    .form-group {
-                        margin-bottom: 22px;
-                    }
-                    .form-group label {
-                        display: flex;
-                        justify-content: space-between;
-                        font-size: 13px;
-                        margin-bottom: 8px;
-                        font-weight: 500;
-                        color: #e5e7eb;
-                    }
-                    .form-group input[type="text"],
-                    .form-group input[type="password"] {
-                        width: 100%;
-                        padding: 14px 15px;
-                        border: none;
-                        border-radius: 8px;
-                        background: white;
-                        color: #1f2937;
-                        font-size: 14px;
-                        box-sizing: border-box;
-                        outline: none;
-                        transition: box-shadow 0.3s;
-                    }
-                    .form-group input:focus {
-                        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4);
-                    }
-                    .forgot-link {
-                        color: #60a5fa;
-                        text-decoration: none;
-                        font-size: 12px;
-                        transition: color 0.3s;
-                    }
+                    .form-group input:focus { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4); }
+                    .forgot-link { color: #60a5fa; text-decoration: none; font-size: 12px; transition: color 0.3s; }
                     .forgot-link:hover { color: #93c5fd; }
-                    .checkbox-group {
-                        display: flex;
-                        align-items: center;
-                        gap: 8px;
-                        font-size: 13px;
-                        margin-bottom: 30px;
-                        color: #d1d5db;
-                    }
-                    .checkbox-group input[type="checkbox"] {
-                        accent-color: #3b82f6;
-                        width: 16px; height: 16px;
-                    }
-                    .btn-submit {
-                        width: 100%;
-                        padding: 15px;
-                        background: #3b82f6;
-                        color: white;
-                        border: none;
-                        border-radius: 8px;
-                        font-size: 16px;
-                        font-weight: bold;
-                        cursor: pointer;
-                        transition: background 0.3s, transform 0.1s;
-                        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
-                    }
+                    .checkbox-group { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 30px; color: #d1d5db; }
+                    .checkbox-group input[type="checkbox"] { accent-color: #3b82f6; width: 16px; height: 16px; }
+                    .btn-submit { width: 100%; padding: 15px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.3s, transform 0.1s; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3); }
                     .btn-submit:hover { background: #2563eb; }
                     .btn-submit:active { transform: scale(0.98); }
-                    @media (max-width: 768px) {
-                        .login-left { display: none; }
-                        .login-right { padding: 40px 30px; }
-                    }
+                    @media (max-width: 768px) { .login-left { display: none; } .login-right { padding: 40px 30px; } }
                 </style>
                 <div class="login-card">
                     <div class="login-left">
-                        <!-- AQUÍ ESTÁ TU LOGO LOCAL -->
                         <img src="imag/logo.png" alt="Logo Grisalis CRM">
                     </div>
                     <div class="login-right">
                         <div class="login-logo">
                             <span style="background: white; color: #2a266b; padding: 2px 8px; border-radius: 8px;">∞</span> Grisalis CRM
                         </div>
-                        
                         <div class="form-group">
                             <label for="login-user">Usuario</label>
                             <input type="text" id="login-user" placeholder="Ej: User123!">
                         </div>
-                        
                         <div class="form-group">
                             <label for="login-pass">
                                 <span>Contraseña</span>
@@ -194,12 +111,10 @@ function mostrarPantallaLogin() {
                             </label>
                             <input type="password" id="login-pass" placeholder="••••••••••••">
                         </div>
-                        
                         <div class="checkbox-group">
                             <input type="checkbox" id="remember">
                             <label for="remember">Recordarme</label>
                         </div>
-                        
                         <button onclick="iniciarSesion()" id="btn-login" class="btn-submit">Sign In</button>
                         <p id="login-error" style="color: #fca5a5; margin-top: 15px; display: none; font-size: 14px; text-align: center;"></p>
                     </div>
@@ -264,19 +179,29 @@ function arrancarApp() {
 
     const loginBox = document.getElementById('login-container');
     if (loginBox) loginBox.style.display = 'none';
-    document.querySelector('header').style.display = 'block';
+    
+    const header = document.querySelector('header');
+    if (header) header.style.display = 'block';
     
     if (crmUserRole === 'admin') {
-        document.getElementById('btn-admin-panel').style.display = 'inline-block';
+        const btnAdmin = document.getElementById('btn-admin-panel');
+        if(btnAdmin) btnAdmin.style.display = 'inline-block';
     }
 
-    document.getElementById('crm-main').style.display = 'flex';
-    document.getElementById('admin-panel').style.display = 'none';
+    const mainCrm = document.getElementById('crm-main');
+    if(mainCrm) mainCrm.style.display = 'flex';
+    
+    const adminPanel = document.getElementById('admin-panel');
+    if(adminPanel) adminPanel.style.display = 'none';
 
-    document.getElementById('user-name-display').innerText = `Hola, ${crmUserName}`;
+    const userNameDisplay = document.getElementById('user-name-display');
+    if(userNameDisplay) userNameDisplay.innerText = `Hola, ${crmUserName}`;
+    
     const badge = document.getElementById('user-role-badge');
-    badge.innerText = crmUserRole === 'admin' ? 'Administrador' : 'Vendedor';
-    badge.style.background = crmUserRole === 'admin' ? '#9c27b0' : '#25D366'; 
+    if(badge) {
+        badge.innerText = crmUserRole === 'admin' ? 'Administrador' : 'Vendedor';
+        badge.style.background = crmUserRole === 'admin' ? '#9c27b0' : '#25D366'; 
+    }
 
     configurarSocketsPrivados();
     cargarProspectos();
@@ -286,32 +211,33 @@ function arrancarApp() {
 // 📡 SOCKETS Y CÓDIGO QR
 // ==========================================
 function configurarSocketsPrivados() {
+    // 🛡️ CORRECCIÓN: Encendemos los websockets solo aquí, para evitar bloqueos
+    if (!socket) socket = io();
+    
     socket.emit('registrar_usuario', crmUserId);
 
     socket.on(`wa_status_${crmUserId}`, (status) => {
         const waText = document.getElementById('wa-status');
         const btnQR = document.getElementById('btn-show-qr');
         
-        waText.innerText = `WhatsApp: ${status}`;
+        if(waText) waText.innerText = `WhatsApp: ${status}`;
         
         if (status === 'Conectado') {
-            waText.style.color = 'green';
-            btnQR.style.display = 'none';
+            if(waText) waText.style.color = 'green';
+            if(btnQR) btnQR.style.display = 'none';
             cerrarModalQR(); 
-            // NUEVO: Apenas conecte, disparamos la verificación de números silenciosamente
             verificarNumerosPendientes();
         } else {
-            waText.style.color = 'orange';
-            btnQR.style.display = 'block'; 
+            if(waText) waText.style.color = 'orange';
+            if(btnQR) btnQR.style.display = 'block'; 
         }
     });
 
     socket.on(`wa_qr_${crmUserId}`, (qrString) => {
         const qrImage = document.getElementById('qr-image');
-        
         QRCode.toDataURL(qrString, { width: 250, margin: 2 }, function (err, url) {
             if (!err) {
-                qrImage.src = url;
+                if(qrImage) qrImage.src = url;
                 mostrarModalQR();
             } else {
                 console.error("Error generando QR:", err);
@@ -321,6 +247,26 @@ function configurarSocketsPrivados() {
 
     socket.on(`recargar_prospectos_${crmUserId}`, () => { cargarProspectos(); });
     socket.on(`nuevo_mensaje_${crmUserId}`, (data) => { procesarMensajeVisual(data); });
+
+    socket.off('estado_actualizado');
+    socket.on('estado_actualizado', (data) => {
+        const prospecto = prospectosGlobal.find(p => p.id === data.id);
+        if (prospecto) {
+            prospecto['Estado'] = data.nuevoEstado;
+            pintarTabla(); 
+        }
+    });
+
+    socket.off('mensaje_enviado');
+    socket.on('mensaje_enviado', (data) => {
+        if (data.status === 'ok') {
+            agregarMensajeAlChat(data.mensaje, 'out');
+            const chatInput = document.getElementById('chat-input');
+            if(chatInput) chatInput.value = '';
+        } else {
+            alert("Error de WhatsApp: " + data.error);
+        }
+    });
 }
 
 function procesarMensajeVisual(data) {
@@ -343,25 +289,14 @@ function procesarMensajeVisual(data) {
     }
 }
 
-socket.on('estado_actualizado', (data) => {
-    const prospecto = prospectosGlobal.find(p => p.id === data.id);
-    if (prospecto) {
-        prospecto['Estado'] = data.nuevoEstado;
-        pintarTabla(); 
-    }
-});
-
-socket.on('mensaje_enviado', (data) => {
-    if (data.status === 'ok') {
-        agregarMensajeAlChat(data.mensaje, 'out');
-        document.getElementById('chat-input').value = '';
-    } else {
-        alert("Error de WhatsApp: " + data.error);
-    }
-});
-
-function mostrarModalQR() { document.getElementById('qr-modal').style.display = 'flex'; }
-function cerrarModalQR() { document.getElementById('qr-modal').style.display = 'none'; }
+function mostrarModalQR() { 
+    const modal = document.getElementById('qr-modal');
+    if(modal) modal.style.display = 'flex'; 
+}
+function cerrarModalQR() { 
+    const modal = document.getElementById('qr-modal');
+    if(modal) modal.style.display = 'none'; 
+}
 
 // ==========================================
 // 🏗️ LÓGICA DE LA TABLA Y UI
@@ -385,6 +320,7 @@ async function cargarProspectos() {
 
 function pintarTabla() {
     const tbody = document.querySelector('#prospectos-table tbody');
+    if(!tbody) return;
     tbody.innerHTML = '';
     
     const colVendedorTh = document.getElementById('columna-vendedor');
@@ -465,8 +401,6 @@ function pintarTabla() {
 }
 
 async function verificarNumerosPendientes() {
-// 🛡️ CORRECCIÓN: Manejo completamente silencioso sin errores en consola
-async function verificarNumerosPendientes() {
     const startIndex = (currentPage - 1) * rowsPerPage;
     const endIndex = startIndex + rowsPerPage;
     const prospectosPagina = prospectosFiltrados.slice(startIndex, endIndex);
@@ -480,8 +414,6 @@ async function verificarNumerosPendientes() {
                 if (!res.ok) continue; 
 
                 const data = await res.json();
-                
-                // Si el backend dice "esperando", saltamos y no hacemos nada
                 if (data.esperando) continue;
 
                 if (typeof data.valido === 'boolean') {
@@ -500,15 +432,25 @@ async function verificarNumerosPendientes() {
 function cambiarPagina(direccion) { currentPage += direccion; pintarTabla(); }
 function actualizarControlesPaginacion() {
     const totalPages = Math.ceil(prospectosFiltrados.length / rowsPerPage) || 1;
-    document.getElementById('page-info').innerText = `Página ${currentPage} de ${totalPages} (${prospectosFiltrados.length} prospectos)`;
-    document.getElementById('btn-prev').disabled = currentPage === 1;
-    document.getElementById('btn-next').disabled = currentPage === totalPages;
-    document.getElementById('btn-prev').style.opacity = currentPage === 1 ? '0.5' : '1';
-    document.getElementById('btn-next').style.opacity = currentPage === totalPages ? '0.5' : '1';
+    const pageInfo = document.getElementById('page-info');
+    if(pageInfo) pageInfo.innerText = `Página ${currentPage} de ${totalPages} (${prospectosFiltrados.length} prospectos)`;
+    
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    if(btnPrev) {
+        btnPrev.disabled = currentPage === 1;
+        btnPrev.style.opacity = currentPage === 1 ? '0.5' : '1';
+    }
+    if(btnNext) {
+        btnNext.disabled = currentPage === totalPages;
+        btnNext.style.opacity = currentPage === totalPages ? '0.5' : '1';
+    }
 }
 
 function filtrarTabla() {
-    const textoBusqueda = document.getElementById('buscador').value.toLowerCase();
+    const searchInput = document.getElementById('buscador');
+    if(!searchInput) return;
+    const textoBusqueda = searchInput.value.toLowerCase();
     prospectosFiltrados = prospectosGlobal.filter(p => {
         const contenido = `${p['Nombre empresa']} ${p['Nicho']} ${p['Contacto (Tel / WhatsApp)']} ${p['Correo']} ${p['Dirección']} ${p['Observaciones']}`.toLowerCase();
         return contenido.includes(textoBusqueda);
@@ -544,50 +486,68 @@ async function generarConIA() {
     finally { btn.innerText = "Buscar y Agregar"; btn.disabled = false; }
 }
 
-function cerrarChat() { document.getElementById('chat-panel').style.display = 'none'; chatActualIndex = null; }
+function cerrarChat() { 
+    const panel = document.getElementById('chat-panel');
+    if(panel) panel.style.display = 'none'; 
+    chatActualIndex = null; 
+}
 
 async function abrirChat(index) {
     chatActualIndex = index;
     const prospecto = prospectosGlobal[index];
     prospecto.mensajesNoLeidos = 0;
     pintarTabla();
-    document.getElementById('chat-panel').style.display = 'flex';
-    document.getElementById('chat-nombre').innerText = prospecto['Nombre empresa'];
-    document.getElementById('chat-numero').innerText = prospecto['Contacto (Tel / WhatsApp)'];
+    
+    const chatPanel = document.getElementById('chat-panel');
+    if(chatPanel) chatPanel.style.display = 'flex';
+    
+    const chatNombre = document.getElementById('chat-nombre');
+    if(chatNombre) chatNombre.innerText = prospecto['Nombre empresa'];
+    
+    const chatNumero = document.getElementById('chat-numero');
+    if(chatNumero) chatNumero.innerText = prospecto['Contacto (Tel / WhatsApp)'];
     
     const messagesBox = document.getElementById('chat-messages');
-    messagesBox.innerHTML = '<div style="text-align: center; color: gray; margin-top: 20px;">Cargando historial...</div>'; 
-    document.getElementById('chat-input').value = '';
+    if(messagesBox) messagesBox.innerHTML = '<div style="text-align: center; color: gray; margin-top: 20px;">Cargando historial...</div>'; 
+    
+    const chatInput = document.getElementById('chat-input');
+    if(chatInput) chatInput.value = '';
 
     try {
         const res = await fetchConToken(`/api/mensajes/${prospecto.id}`);
         const historial = await res.json();
-        messagesBox.innerHTML = ''; 
+        if(messagesBox) messagesBox.innerHTML = ''; 
         if (historial.length === 0) {
-            messagesBox.innerHTML = '<div style="text-align: center; color: gray; font-size: 12px; margin-top: 10px;">Inicia la conversación</div>';
-            document.getElementById('chat-input').value = prospecto['Mensaje de Acercamiento'] || '';
+            if(messagesBox) messagesBox.innerHTML = '<div style="text-align: center; color: gray; font-size: 12px; margin-top: 10px;">Inicia la conversación</div>';
+            if(chatInput) chatInput.value = prospecto['Mensaje de Acercamiento'] || '';
         } else {
             historial.forEach(msg => agregarMensajeAlChat(msg.mensaje, msg.tipo));
         }
-    } catch (error) { messagesBox.innerHTML = '<div style="text-align: center; color: red;">Error cargando historial.</div>'; }
+    } catch (error) { 
+        if(messagesBox) messagesBox.innerHTML = '<div style="text-align: center; color: red;">Error cargando historial.</div>'; 
+    }
 }
 
 function enviarMensaje() {
     if (chatActualIndex === null) return;
     const prospecto = prospectosGlobal[chatActualIndex];
-    const mensaje = document.getElementById('chat-input').value;
+    const input = document.getElementById('chat-input');
+    const mensaje = input ? input.value : '';
     if (mensaje.trim() === '') return;
 
-    socket.emit('enviar_mensaje', {
-        userId: crmUserId, 
-        numero: prospecto['Contacto (Tel / WhatsApp)'],
-        mensaje: mensaje,
-        prospecto_id: prospecto.id 
-    });
+    if(socket) {
+        socket.emit('enviar_mensaje', {
+            userId: crmUserId, 
+            numero: prospecto['Contacto (Tel / WhatsApp)'],
+            mensaje: mensaje,
+            prospecto_id: prospecto.id 
+        });
+    }
 }
 
 function agregarMensajeAlChat(texto, tipo) {
     const messagesBox = document.getElementById('chat-messages');
+    if(!messagesBox) return;
     const msgDiv = document.createElement('div');
     msgDiv.style.maxWidth = '80%'; msgDiv.style.padding = '10px'; msgDiv.style.borderRadius = '8px'; msgDiv.style.marginBottom = '10px';
     if (tipo === 'out') { msgDiv.style.background = '#dcf8c6'; msgDiv.style.alignSelf = 'flex-end'; } 
@@ -616,13 +576,13 @@ async function sugerirRespuesta() {
     const prospecto = prospectosGlobal[chatActualIndex];
     const btn = document.getElementById('btn-sugerir');
     const input = document.getElementById('chat-input');
-    btn.innerText = "Pensando..."; btn.disabled = true;
+    if(btn) { btn.innerText = "Pensando..."; btn.disabled = true; }
     try {
         const res = await fetchConToken('/api/sugerir-respuesta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prospecto_id: prospecto.id }) });
         const data = await res.json();
-        if (data.sugerencia) input.value = data.sugerencia; 
+        if (data.sugerencia && input) input.value = data.sugerencia; 
     } catch (error) { alert("Error de conexión."); } 
-    finally { btn.innerText = "✨ Sugerir"; btn.disabled = false; }
+    finally { if(btn) { btn.innerText = "✨ Sugerir"; btn.disabled = false; } }
 }
 
 function mostrarNotificacion(titulo, mensaje) {
@@ -649,16 +609,14 @@ function toggleAdminPanel() {
     const adminView = document.getElementById('admin-panel');
     const btn = document.getElementById('btn-admin-panel');
     
-    if (crmView.style.display === 'none') {
+    if (crmView && crmView.style.display === 'none') {
         crmView.style.display = 'flex';
-        adminView.style.display = 'none';
-        btn.innerText = "👥 Usuarios";
-        btn.style.background = "#9c27b0";
+        if(adminView) adminView.style.display = 'none';
+        if(btn) { btn.innerText = "👥 Usuarios"; btn.style.background = "#9c27b0"; }
     } else {
-        crmView.style.display = 'none';
-        adminView.style.display = 'flex';
-        btn.innerText = "🏠 Volver al CRM";
-        btn.style.background = "#1a73e8";
+        if(crmView) crmView.style.display = 'none';
+        if(adminView) adminView.style.display = 'flex';
+        if(btn) { btn.innerText = "🏠 Volver al CRM"; btn.style.background = "#1a73e8"; }
         cargarUsuarios(); 
     }
 }
@@ -668,11 +626,11 @@ async function cargarUsuarios() {
         const res = await fetchConToken('/api/usuarios');
         const usuarios = await res.json();
         const tbody = document.querySelector('#usuarios-table tbody');
+        if(!tbody) return;
         tbody.innerHTML = '';
         
         usuarios.forEach(u => {
             const isMe = (u.id === crmUserId);
-            
             tbody.innerHTML += `
                 <tr style="border-bottom: 1px solid #ddd;">
                     <td style="padding: 10px; font-weight: bold;">${u.usuario} ${isMe ? '(Tú)' : ''}</td>
@@ -690,19 +648,27 @@ async function cargarUsuarios() {
 }
 
 function editarUsuario(id, usuario, rol) {
-    document.getElementById('admin-user-id').value = id;
-    document.getElementById('admin-user-name').value = usuario;
-    document.getElementById('admin-user-pass').value = ''; 
-    document.getElementById('admin-user-pass').placeholder = "Dejar en blanco para no cambiar clave";
-    document.getElementById('admin-user-rol').value = rol;
+    const inputId = document.getElementById('admin-user-id');
+    const inputName = document.getElementById('admin-user-name');
+    const inputPass = document.getElementById('admin-user-pass');
+    const inputRol = document.getElementById('admin-user-rol');
+    
+    if(inputId) inputId.value = id;
+    if(inputName) inputName.value = usuario;
+    if(inputPass) { inputPass.value = ''; inputPass.placeholder = "Dejar en blanco para no cambiar clave"; }
+    if(inputRol) inputRol.value = rol;
 }
 
 function limpiarFormularioUsuario() {
-    document.getElementById('admin-user-id').value = '';
-    document.getElementById('admin-user-name').value = '';
-    document.getElementById('admin-user-pass').value = '';
-    document.getElementById('admin-user-pass').placeholder = "Contraseña nueva";
-    document.getElementById('admin-user-rol').value = 'vendedor';
+    const inputId = document.getElementById('admin-user-id');
+    const inputName = document.getElementById('admin-user-name');
+    const inputPass = document.getElementById('admin-user-pass');
+    const inputRol = document.getElementById('admin-user-rol');
+    
+    if(inputId) inputId.value = '';
+    if(inputName) inputName.value = '';
+    if(inputPass) { inputPass.value = ''; inputPass.placeholder = "Contraseña nueva"; }
+    if(inputRol) inputRol.value = 'vendedor';
 }
 
 async function guardarUsuario() {
@@ -722,9 +688,7 @@ async function guardarUsuario() {
 
     try {
         const res = await fetchConToken(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            method: method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         const data = await res.json();
         
@@ -758,10 +722,11 @@ async function eliminarUsuarioBD(id, nombre) {
     }
 }
 
-// ARRANQUE DEL SISTEMA
-if (localStorage.getItem('crm_token')) {
-    arrancarApp();
-} else {
-    mostrarPantallaLogin();
-}
-}
+// 🛡️ CORRECCIÓN: Asegurar que el HTML ya se haya cargado antes de ejecutar JS
+document.addEventListener("DOMContentLoaded", () => {
+    if (localStorage.getItem('crm_token')) {
+        arrancarApp();
+    } else {
+        mostrarPantallaLogin();
+    }
+});
