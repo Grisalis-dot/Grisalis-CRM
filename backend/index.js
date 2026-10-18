@@ -51,9 +51,21 @@ function iniciarWhatsAppParaUsuario(userId, socket = null) {
     waStatuses.set(userId, 'Iniciando servidor...');
     if (socket) socket.emit(`wa_status_${userId}`, 'Iniciando servidor...');
 
+    // CORRECCIÓN: Configuración extrema de ahorro de memoria para evitar que Render explote (Error 502)
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: userId }), 
-        puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+        puppeteer: { 
+            headless: true,
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage', // <--- Evita que la memoria caché del servidor se llene
+                '--disable-accelerated-2d-canvas', // <--- Apaga gráficos innecesarios
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu' // <--- Render no tiene tarjeta gráfica, esto evita que intente buscarla
+            ] 
+        }
     });
 
     client.on('qr', (qr) => {
