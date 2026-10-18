@@ -1,17 +1,14 @@
-// Cargar variables de entorno
 require('dotenv').config();
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
 const cors = require('cors');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
 
-// 1. CONFIGURACIÓN DE IA Y BASE DE DATOS (AHORA DESDE .ENV)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
@@ -26,52 +23,228 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// 2. CONFIGURACIÓN DE WHATSAPP Y RECEPCIÓN DE MENSAJES
-console.log('Iniciando sistema...');
-const waClient = new Client({ authStrategy: new LocalAuth() });
+// ==========================================
+// 🧠 MOTOR MULTI-WHATSAPP MEJORADO (CON MEMORIA DE QR)
+// ==========================================
+const waClients = new Map();
+const waQrCodes = new Map();   // 👈 Guardará temporalmente el QR generado por cada vendedor
+const waStatuses = new Map();  // 👈 Guardará el estado real ("Conectado" o "Esperando QR")
+const creandoProspectos = new Set();
 
-waClient.on('qr', (qr) => qrcode.generate(qr, { small: true }));
-waClient.on('ready', () => {
-    console.log('¡WhatsApp conectado!');
-    io.emit('wa_status', 'Conectado');
-});
+function iniciarWhatsAppParaUsuario(userId, socket = null) {
+    // Si el usuario ya tiene una sesión iniciándose o corriendo
+    if (waClients.has(userId)) {
+        if (socket) {
+            // Le mandamos el estado real apenas abre la página
+            const statusActual = waStatuses.get(userId) || 'Iniciando servidor...';
+            socket.emit(`wa_status_${userId}`, statusActual);
+            
+            // 👈 ¡MAGIA! Si ya se había generado un QR y está pendiente, se lo enviamos de inmediato a la pantalla
+            if (waQrCodes.has(userId)) {
+                socket.emit(`wa_qr_${userId}`, waQrCodes.get(userId));
+            }
+        }
+        return waClients.get(userId);
+    }
 
-// AHORA GUARDA EL HISTORIAL DE CHAT ENTRANTE (CORREGIDO PARA IGNORAR ESPACIOS)
-waClient.on('message', async msg => {
-    let numeroLimpio = msg.from.replace('@c.us', '');
+    console.log(`Iniciando instancia de WhatsApp para usuario: ${userId}`);
+    waStatuses.set(userId, 'Iniciando servidor...');
+    if (socket) socket.emit(`wa_status_${userId}`, 'Iniciando servidor...');
+
+    const client = new Client({
+        authStrategy: new LocalAuth({ clientId: userId }), 
+        puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+    });
+
+    client.on('qr', (qr) => {
+        waQrCodes.set(userId, qr); // Guardamos el QR en memoria
+        waStatuses.set(userId, 'Escanea el QR para conectar');
+        
+        io.emit(`wa_qr_${userId}`, qr); 
+        io.emit(`wa_status_${userId}`, 'Escanea el QR para conectar');
+    });
+
+    client.on('ready', () => {
+        console.log(`¡WhatsApp conectado para el usuario ${userId}!`);
+        waQrCodes.delete(userId); // Borramos el QR de la memoria, ya no se necesita
+        waStatuses.set(userId, 'Conectado');
+        io.emit(`wa_status_${userId}`, 'Conectado');
+    });
+
+    // Detectamos si la sesión se cierra desde el teléfono para pedir QR nuevamente
+    client.on('disconnected', (reason) => {
+        console.log(`WhatsApp desconectado para ${userId}: ${reason}`);
+        waQrCodes.delete(userId);
+        waStatuses.set(userId, 'Desconectado (Recarga la página)');
+        io.emit(`wa_status_${userId}`, 'Desconectado (Recarga la página)');
+        waClients.delete(userId);
+    });
+
+    client.on('message', async msg => {
+        procesarMensajeEntrante(msg, userId, client);
+    });
+
+    client.initialize();
+    waClients.set(userId, client);
+    return client;
+}
+
+// Lógica separada para procesar mensajes y clasificar con IA
+async function procesarMensajeEntrante(msg, userId, client) {
+    const contact = await msg.getContact();
+    let numeroLimpio = contact.number || msg.from.replace('@c.us', '');
     
+    if (creandoProspectos.has(numeroLimpio)) {
+        await new Promise(resolve => setTimeout(resolve, 1500)); 
+    }
+
     try {
-        const { data: prospectos, error } = await supabase.from('prospectos').select('id, contacto');
+        const { data: prospectos, error } = await supabase.from('prospectos').select('id, contacto, estado').eq('vendedor_id', userId);
         if (error) throw error;
 
-        // Buscamos ignorando espacios, guiones o signos +
-        const prospecto = prospectos.find(p => {
+        let prospecto = prospectos.find(p => {
             const telLimpiado = (p.contacto || '').replace(/\D/g, ''); 
-            return telLimpiado === numeroLimpio;
+            const incomingLimpiado = numeroLimpio.replace(/\D/g, '');
+            return telLimpiado === incomingLimpiado || p.contacto === numeroLimpio;
         });
         
-        if (prospecto) {
-            const { error: insertError } = await supabase.from('mensajes').insert([{
+        if (!prospecto) {
+            creandoProspectos.add(numeroLimpio);
+            const { data: nuevoProspecto, error: insertError } = await supabase.from('prospectos').insert([{
+                vendedor_id: userId, 
+                nombre_empresa: 'Lead Entrante',
+                nicho: 'Sin definir',
+                contacto: numeroLimpio, 
+                estado: 'Nuevo'
+            }]).select().single(); 
+            
+            creandoProspectos.delete(numeroLimpio);
+            
+            if (!insertError) {
+                prospecto = nuevoProspecto;
+                io.emit(`recargar_prospectos_${userId}`); 
+            } else {
+                return; 
+            }
+        }
+
+        if (prospecto && prospecto.id) {
+            await supabase.from('mensajes').insert([{
                 prospecto_id: prospecto.id,
                 mensaje: msg.body,
                 tipo: 'in'
             }]);
-            if (insertError) console.error("❌ Error DB (Guardando entrada):", insertError.message);
+
+            try {
+                const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
+                const promptClasificacion = `Eres experto en ventas. Cliente dice: "${msg.body}". Clasifica en UNA opción: "Contactado", "En Negociación", "Cliente Cerrado", "No Interesado", "MANTENER". Devuelve SOLO la opción.`;
+                const result = await model.generateContent(promptClasificacion);
+                let nuevoEstado = result.response.text().trim();
+                const estadosValidos = ['Contactado', 'En Negociación', 'Cliente Cerrado', 'No Interesado'];
+                if (estadosValidos.includes(nuevoEstado) && nuevoEstado !== prospecto.estado) {
+                    await supabase.from('prospectos').update({ estado: nuevoEstado }).eq('id', prospecto.id);
+                    io.emit('estado_actualizado', { id: prospecto.id, nuevoEstado: nuevoEstado });
+                }
+            } catch (iaError) {}
+        }
+    } catch (err) { console.error(err.message); }
+
+    io.emit(`nuevo_mensaje_${userId}`, { numero: numeroLimpio, body: msg.body });
+}
+
+// ==========================================
+// 🔒 SISTEMA DE SEGURIDAD
+// ==========================================
+app.post('/api/login', async (req, res) => {
+    try {
+        const { usuario, password } = req.body;
+        const { data, error } = await supabase.from('usuarios').select('*').eq('usuario', usuario).single();
+        if (error || !data) return res.status(401).json({ success: false, error: 'Usuario no encontrado' });
+
+        if (data.password === password) {
+            const token = jwt.sign({ id: data.id, usuario: data.usuario, rol: data.rol }, process.env.JWT_SECRET, { expiresIn: '12h' });
+            
+            // Arrancamos WhatsApp silenciosamente al validar contraseña
+            iniciarWhatsAppParaUsuario(data.id);
+            
+            res.json({ success: true, token, rol: data.rol, id: data.id });
+        } else {
+            res.status(401).json({ success: false, error: 'Contraseña incorrecta' });
         }
     } catch (err) {
-        console.error("❌ Error buscando cliente para historial:", err.message);
+        res.status(500).json({ success: false, error: 'Error del servidor' });
     }
-
-    io.emit('nuevo_mensaje', { numero: numeroLimpio, body: msg.body });
 });
-waClient.initialize();
 
-// 3. RUTA PARA LEER PROSPECTOS DESDE SUPABASE
-app.get('/api/prospectos', async (req, res) => {
+function verificarToken(req, res, next) {
+    const token = req.headers['authorization'];
+    if (!token) return res.status(403).json({ error: 'Acceso denegado.' });
+    jwt.verify(token.replace('Bearer ', ''), process.env.JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Sesión expirada.' });
+        req.user = user; 
+        next(); 
+    });
+}
+
+// 🛡️ Filtro estricto: Solo deja pasar a los administradores
+function soloAdmin(req, res, next) {
+    if (req.user.rol !== 'admin') return res.status(403).json({ error: 'Prohibido. Solo administradores.' });
+    next();
+}
+
+// ==========================================
+// 👥 MÓDULO DE GESTIÓN DE USUARIOS
+// ==========================================
+// Leer todos los usuarios
+app.get('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
+    const { data, error } = await supabase.from('usuarios').select('id, usuario, rol, creado_en').order('creado_en', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+// Crear nuevo usuario
+app.post('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
+    const { usuario, password, rol } = req.body;
+    const { data, error } = await supabase.from('usuarios').insert([{ usuario, password, rol }]).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, data });
+});
+
+// Editar usuario (rol, nombre o contraseña)
+app.put('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { usuario, password, rol } = req.body;
+    
+    let updateData = { usuario, rol };
+    if (password) updateData.password = password; // Si envía contraseña, la actualizamos
+
+    const { error } = await supabase.from('usuarios').update(updateData).eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// Eliminar usuario
+app.delete('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { error } = await supabase.from('usuarios').delete().eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// ==========================================
+// 📡 RUTAS PROTEGIDAS (CON FILTROS DE ROL)
+// ==========================================
+app.get('/api/prospectos', verificarToken, async (req, res) => {
     try {
-        const { data, error } = await supabase.from('prospectos').select('*').order('creado_en', { ascending: false });
+        let query = supabase.from('prospectos').select('*, usuarios(usuario)').order('creado_en', { ascending: false });
+        
+        if (req.user.rol !== 'admin') {
+            query = query.eq('vendedor_id', req.user.id);
+        }
+        
+        const { data, error } = await query;
         if (error) throw error;
-
+        
         const prospectosAdaptados = data.map(p => ({
             id: p.id,
             'Nombre empresa': p.nombre_empresa,
@@ -81,114 +254,122 @@ app.get('/api/prospectos', async (req, res) => {
             'Dirección': p.direccion,
             'Observaciones': p.observaciones,
             'Mensaje de Acercamiento': p.mensaje_acercamiento,
-            'Estado': p.estado
+            'Estado': p.estado,
+            'Vendedor': p.usuarios ? p.usuarios.usuario : 'Sin asignar', 
+            'vendedor_id': p.vendedor_id
         }));
-
         res.json(prospectosAdaptados);
-    } catch (error) {
-        console.error('Error leyendo Supabase:', error.message);
-        res.status(500).json({ error: 'Error cargando datos de la nube' });
-    }
+    } catch (error) { res.status(500).json({ error: 'Error cargando datos' }); }
 });
 
-// 4. RUTA PARA ACTUALIZAR EL ESTADO EN SUPABASE
-app.post('/api/actualizar-estado', async (req, res) => {
+app.post('/api/actualizar-estado', verificarToken, async (req, res) => {
     try {
         const { id, estado } = req.body; 
         const { error } = await supabase.from('prospectos').update({ estado: estado }).eq('id', id);
         if (error) throw error;
         res.json({ success: true });
-    } catch (error) {
-        console.error('Error al actualizar estado:', error.message);
-        res.status(500).json({ error: 'Error interno al guardar.' });
-    }
+    } catch (error) { res.status(500).json({ error: 'Error interno' }); }
 });
 
-// 4.5 RUTA PARA OBTENER EL HISTORIAL DE CHAT
-app.get('/api/mensajes/:prospecto_id', async (req, res) => {
+app.get('/api/mensajes/:prospecto_id', verificarToken, async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('mensajes')
-            .select('*')
-            .eq('prospecto_id', req.params.prospecto_id)
-            .order('creado_en', { ascending: true });
+        const { data, error } = await supabase.from('mensajes').select('*').eq('prospecto_id', req.params.prospecto_id).order('creado_en', { ascending: true });
         if (error) throw error;
         res.json(data);
-    } catch (error) {
-        console.error('Error cargando historial:', error.message);
-        res.status(500).json({ error: 'Error cargando historial' });
-    }
+    } catch (error) { res.status(500).json({ error: 'Error cargando historial' }); }
 });
 
-// 5. EL CEREBRO DE LA IA
-app.post('/api/generar-prospectos', async (req, res) => {
+app.get('/api/verificar-numero/:numero', verificarToken, async (req, res) => {
+    try {
+        const numeroOriginal = req.params.numero;
+        if (numeroOriginal.includes('@lid')) return res.json({ valido: true }); 
+        const numeroLimpio = numeroOriginal.replace(/\D/g, '');
+        if (!numeroLimpio) return res.json({ valido: false });
+        
+        const client = waClients.get(req.user.id);
+        if (!client) return res.json({ valido: false });
+
+        const contactoValido = await client.getNumberId(numeroLimpio);
+        res.json({ valido: !!contactoValido }); 
+    } catch (error) { res.json({ valido: false }); }
+});
+
+app.post('/api/generar-prospectos', verificarToken, async (req, res) => {
     try {
         const { nicho, ciudad } = req.body;
         const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' }); 
-        
-        const prompt = `Actúa como un experto en prospección B2B. Busca en internet 3 negocios reales del nicho "${nicho}" en la ciudad de "${ciudad}" o inventa 3 ejemplos hiperrealistas si la búsqueda directa falla. 
-        Analiza si tienen sitio web. Genera un JSON estrictamente con esta estructura (sin texto adicional ni comillas invertidas markdown):
-        [
-            {"nombre_empresa": "Ejemplo", "nicho": "${nicho}", "contacto": "+57 3000000000", "correo": "No disponible", "direccion": "Calle Falsa 123", "observaciones": "Sin sitio web propio.", "mensaje_acercamiento": "¡Hola equipo de Ejemplo! Somos Grisalis Technologies...", "estado": "Nuevo"}
-        ]`;
-
-        console.log(`Conectando con Gemini AI para buscar ${nicho} en ${ciudad}...`);
+        const prompt = `Busca 3 negocios B2B en ${nicho} en ${ciudad}. Devuelve JSON estricto: [{"nombre_empresa": "X", "nicho": "${nicho}", "contacto": "+5730000", "correo": "N/A", "direccion": "X", "observaciones": "X", "mensaje_acercamiento": "Hola", "estado": "Nuevo"}]`;
         const result = await model.generateContent(prompt);
-        let textoRespuesta = result.response.text();
-        
-        textoRespuesta = textoRespuesta.replace(/```json/g, '').replace(/```/g, '').trim();
-        const nuevosProspectos = JSON.parse(textoRespuesta);
+        const nuevosProspectos = JSON.parse(result.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
+
+        nuevosProspectos.forEach(p => p.vendedor_id = req.user.id);
 
         const { error } = await supabase.from('prospectos').insert(nuevosProspectos);
         if (error) throw error;
-
-        console.log("¡Prospectos guardados en Supabase con éxito!");
-        res.json({ success: true, message: 'Prospectos generados y guardados en Supabase.' });
-        
-    } catch (error) {
-        console.error('Error con IA:', error.message);
-        res.status(500).json({ success: false, error: 'Fallo al conectar con Gemini: ' + error.message });
-    }
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
 
-// 6. RUTA DE SOCKETS (CHAT) - AHORA GUARDA MENSAJES SALIENTES CON LOGS Y ESPERA A LA BD
+app.post('/api/sugerir-respuesta', verificarToken, async (req, res) => {
+    try {
+        const { prospecto_id } = req.body;
+        const { data: historial, error } = await supabase.from('mensajes').select('mensaje, tipo').eq('prospecto_id', prospecto_id).order('creado_en', { ascending: true }).limit(10);
+        if (error) throw error;
+        if (!historial || historial.length === 0) return res.json({ sugerencia: "¡Hola! ¿En qué podemos ayudarte?" });
+
+        const chatContext = historial.map(m => m.tipo === 'in' ? `Cliente: ${m.mensaje}` : `Vendedor: ${m.mensaje}`).join('\n');
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' }); 
+        const prompt = `Eres experto en ventas. Lee este chat:\n\n${chatContext}\n\nEscribe la próxima respuesta. Solo texto.`;
+        const result = await model.generateContent(prompt);
+        res.json({ sugerencia: result.response.text().trim() });
+    } catch (error) { res.status(500).json({ error: 'Fallo al conectar con IA.' }); }
+});
+
+app.delete('/api/prospectos/:id', verificarToken, async (req, res) => {
+    try {
+        if (req.user.rol !== 'admin') {
+            return res.status(403).json({ error: 'No tienes permisos para eliminar prospectos.' });
+        }
+        const { id } = req.params;
+        await supabase.from('mensajes').delete().eq('prospecto_id', id);
+        const { error } = await supabase.from('prospectos').delete().eq('id', id);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (error) { res.status(500).json({ error: 'Error interno.' }); }
+});
+
 io.on('connection', (socket) => {
+    socket.on('registrar_usuario', (userId) => {
+        socket.join(`sala_${userId}`); 
+        iniciarWhatsAppParaUsuario(userId, socket); // 👈 Le pasamos el socket para que mande el QR directo
+    });
+
     socket.on('enviar_mensaje', async (data) => {
         try {
-            const numeroLimpio = data.numero.replace(/\D/g, ''); 
-            const contactoValido = await waClient.getNumberId(numeroLimpio);
-            
-            if (!contactoValido) {
-                return socket.emit('mensaje_enviado', { status: 'error', error: 'No tiene WhatsApp.' });
+            const client = waClients.get(data.userId);
+            if (!client) return socket.emit('mensaje_enviado', { status: 'error', error: 'Tu WhatsApp no está conectado.' });
+
+            let chatId;
+            if (data.numero.includes('@lid')) {
+                chatId = data.numero; 
+            } else {
+                const numeroLimpio = data.numero.replace(/\D/g, ''); 
+                const contactoValido = await client.getNumberId(numeroLimpio);
+                if (!contactoValido) return socket.emit('mensaje_enviado', { status: 'error', error: 'El número no tiene WhatsApp.' });
+                chatId = contactoValido._serialized;
             }
             
-            // 1. Envía el mensaje por WhatsApp
-            await waClient.sendMessage(contactoValido._serialized, data.mensaje);
+            await client.sendMessage(chatId, data.mensaje);
             
-            // 2. IMPORTANTE: Guardar en Supabase (Asegurando que el ID viaja correctamente)
             if (data.prospecto_id) {
-                const { data: dbData, error: dbErr } = await supabase.from('mensajes').insert([{
+                await supabase.from('mensajes').insert([{
                     prospecto_id: data.prospecto_id,
                     mensaje: data.mensaje,
                     tipo: 'out'
-                }]).select(); // El .select() obliga a la BD a confirmar que lo guardó
-                
-                if (dbErr) {
-                    console.error('❌ Error BD (Enviando):', dbErr.message, dbErr.details);
-                } else {
-                    console.log(`✅ Mensaje guardado en BD para el prospecto ${data.prospecto_id}`);
-                }
-            } else {
-                console.error('❌ Error: El frontend no envió el prospecto_id a los sockets');
+                }]);
             }
-
-            // 3. Confirmar al frontend que todo salió bien
             socket.emit('mensaje_enviado', { status: 'ok', mensaje: data.mensaje, numero: data.numero });
-            
-        } catch (error) {
-            console.error('❌ Error de Socket General:', error);
-            socket.emit('mensaje_enviado', { status: 'error', error: 'Error interno del servidor.' });
-        }
+        } catch (error) { socket.emit('mensaje_enviado', { status: 'error', error: 'Error interno.' }); }
     });
 });
 

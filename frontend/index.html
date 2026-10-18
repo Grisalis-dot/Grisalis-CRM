@@ -3,20 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Prospectos - Grisalis</title>
+    <title>Gestión de Prospectos - Grisalis CRM</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Estilos adicionales para la barra superior corporativa */
+        .top-bar {
+            background: #005c4b;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .logout-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        /* Modal para el QR de WhatsApp */
+        #qr-modal {
+            display: none; 
+            position: fixed; 
+            top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.8); 
+            z-index: 9999; 
+            justify-content: center; 
+            align-items: center;
+        }
+        #qr-box {
+            background: white; 
+            padding: 30px; 
+            border-radius: 10px; 
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <h1>Gestión de Prospectos - Grisalis</h1>
-        <p id="wa-status" style="color: orange; font-weight: bold;">WhatsApp: Esperando conexión...</p>
+    <header style="display: none;">
+        <div class="top-bar">
+            <h1 style="margin: 0; font-size: 20px;">Grisalis CRM</h1>
+            <div class="user-info">
+                <span id="user-name-display" style="font-weight: bold;"></span>
+                <span id="user-role-badge" style="background: #25D366; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold;"></span>
+                
+                <!-- NUEVO BOTÓN ADMIN -->
+                <button id="btn-admin-panel" onclick="toggleAdminPanel()" style="display:none; background: #9c27b0; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">👥 Usuarios</button>
+                
+                <button class="logout-btn" onclick="cerrarSesion()">Cerrar Sesión</button>
+            </div>
+        </div>
+        <div style="padding: 10px 20px; background: #f0f2f5; display: flex; align-items: center; gap: 10px;">
+            <p id="wa-status" style="color: orange; font-weight: bold; margin: 0;">WhatsApp: Conectando servidor...</p>
+            <button id="btn-show-qr" onclick="mostrarModalQR()" style="display: none; background: #25D366; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Ver Código QR</button>
+        </div>
     </header>
 
-    <main style="display: flex; gap: 20px; padding: 20px;">
-        <!-- Panel Izquierdo: Tabla y Controles -->
+    <!-- Ventana Modal para el QR -->
+    <div id="qr-modal">
+        <div id="qr-box">
+            <h3 style="margin-top: 0; color: #005c4b;">Vincula tu WhatsApp</h3>
+            <p style="font-size: 14px; color: #555; max-width: 250px; margin: 0 auto 15px auto;">Abre WhatsApp en tu teléfono, toca Menú > Dispositivos vinculados > Vincular un dispositivo.</p>
+            <img id="qr-image" src="" alt="Cargando QR..." style="width: 250px; height: 250px; border: 1px solid #ddd; padding: 10px; border-radius: 8px;">
+            <br><br>
+            <button onclick="cerrarModalQR()" style="background: #ccc; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">Cerrar esta ventana</button>
+        </div>
+    </div>
+
+    <!-- MAIN DEL CRM (VISTA DE VENTAS) -->
+    <main id="crm-main" style="display: none; gap: 20px; padding: 20px;">
         <section style="flex: 2; overflow-x: auto;">
-            
-            <!-- Asistente IA -->
             <div class="ia-panel" style="background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
                 <strong>🤖 Asistente IA:</strong>
                 <input type="text" id="ia-nicho" placeholder="Ej. Clínicas Dentales" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;">
@@ -26,12 +91,10 @@
                 </button>
             </div>
 
-            <!-- Buscador en tiempo real -->
             <div class="search-panel" style="margin-bottom: 15px;">
                 <input type="text" id="buscador" onkeyup="filtrarTabla()" placeholder="🔍 Buscar empresa, nicho o teléfono..." style="width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box;">
             </div>
 
-            <!-- Tabla de Prospectos con TODAS las columnas -->
             <table id="prospectos-table" style="width: 100%; border-collapse: collapse; font-size: 14px;">
                 <thead>
                     <tr style="background: #0044cc; color: white; text-align: left;">
@@ -41,43 +104,83 @@
                         <th style="padding: 10px;">Correo</th>
                         <th style="padding: 10px;">Dirección</th>
                         <th style="padding: 10px;">Observaciones</th>
+                        <th style="padding: 10px;" id="columna-vendedor" style="display:none;">Vendedor</th>
                         <th style="padding: 10px;">Estado</th>
                         <th style="padding: 10px;">Acción</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td colspan="8" style="padding: 10px; text-align: center;">Cargando datos...</td></tr>
+                    <tr><td colspan="9" style="padding: 10px; text-align: center;">Cargando datos...</td></tr>
                 </tbody>
             </table>
 
-            <!-- Controles de Paginación -->
             <div id="pagination-controls" style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
                 <button onclick="cambiarPagina(-1)" id="btn-prev" style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px;">⬅ Anterior</button>
                 <span id="page-info" style="font-weight: bold;">Página 1 de 1</span>
                 <button onclick="cambiarPagina(1)" id="btn-next" style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px;">Siguiente ➡</button>
             </div>
-
         </section>
 
-        <!-- Panel Derecho: Chat -->
         <aside id="chat-panel" style="flex: 1; background: #f0f0f0; border-radius: 8px; display: none; flex-direction: column; height: 80vh;">
-            <div id="chat-header" style="background: #005c4b; color: white; padding: 15px; border-radius: 8px 8px 0 0;">
-                <h3 id="chat-nombre" style="margin: 0;">Selecciona un cliente</h3>
-                <span id="chat-numero" style="font-size: 12px;"></span>
+            <div id="chat-header" style="background: #005c4b; color: white; padding: 15px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 id="chat-nombre" style="margin: 0;">Selecciona un cliente</h3>
+                    <span id="chat-numero" style="font-size: 12px;"></span>
+                </div>
+                <button onclick="cerrarChat()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; padding: 0 5px;" title="Cerrar chat">✖</button>
             </div>
             
             <div id="chat-messages" style="flex: 1; padding: 15px; overflow-y: auto; background: #efeae2; display: flex; flex-direction: column; gap: 10px;">
-                <!-- Los mensajes aparecerán aquí -->
             </div>
 
-            <div style="padding: 15px; background: white; border-radius: 0 0 8px 8px; display: flex; gap: 10px;">
-                <textarea id="chat-input" placeholder="Escribe un mensaje..." style="flex: 1; resize: none; border-radius: 5px; padding: 10px; border: 1px solid #ccc;"></textarea>
-                <button onclick="enviarMensaje()" style="background: #1a73e8; color: white; border: none; padding: 0 20px; border-radius: 5px; cursor: pointer;">Enviar</button>
+            <div style="padding: 15px; background: white; border-radius: 0 0 8px 8px; display: flex; gap: 10px; align-items: flex-end;">
+                <textarea id="chat-input" placeholder="Escribe un mensaje..." style="flex: 1; resize: none; border-radius: 5px; padding: 10px; border: 1px solid #ccc; height: 60px;"></textarea>
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <button onclick="enviarMensaje()" style="background: #1a73e8; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">Enviar</button>
+                    <button onclick="sugerirRespuesta()" id="btn-sugerir" style="background: #9c27b0; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;" title="La IA redactará una respuesta">✨ Sugerir</button>
+                </div>
             </div>
         </aside>
     </main>
 
+    <!-- NUEVO: MAIN DE ADMINISTRACIÓN (Solo visible al darle clic al botón) -->
+    <main id="admin-panel" style="display: none; padding: 20px; max-width: 1000px; margin: 0 auto; gap: 20px; flex-direction: row; align-items: flex-start;">
+        
+        <div style="flex: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <h3 style="margin-top: 0; color: #005c4b;">Crear / Editar Usuario</h3>
+            <input type="hidden" id="admin-user-id">
+            <input type="text" id="admin-user-name" placeholder="Nombre de usuario" style="padding: 10px; margin-bottom: 15px; width: 100%; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+            <input type="password" id="admin-user-pass" placeholder="Contraseña nueva" style="padding: 10px; margin-bottom: 15px; width: 100%; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+            <select id="admin-user-rol" style="padding: 10px; margin-bottom: 20px; width: 100%; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                <option value="vendedor">Vendedor</option>
+                <option value="admin">Administrador</option>
+            </select>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="guardarUsuario()" style="background: #1a73e8; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; flex: 1;">💾 Guardar</button>
+                <button onclick="limpiarFormularioUsuario()" style="background: #ccc; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer;">Cancelar</button>
+            </div>
+        </div>
+
+        <div style="flex: 2; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow-x: auto;">
+            <h3 style="margin-top: 0; color: #005c4b;">Lista de Usuarios</h3>
+            <table id="usuarios-table" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead>
+                    <tr style="background: #005c4b; color: white; text-align: left;">
+                        <th style="padding: 10px;">Usuario</th>
+                        <th style="padding: 10px;">Rol</th>
+                        <th style="padding: 10px;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Se llenará con JS -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+
     <script src="/socket.io/socket.io.js"></script>
+    <!-- NUEVA LIBRERÍA: Generador de QR interno antibloqueos -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
