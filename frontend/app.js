@@ -27,18 +27,238 @@ async function fetchConToken(url, opciones = {}) {
 }
 
 function mostrarPantallaLogin() {
+    // Ocultar la app principal
     document.querySelector('header').style.display = 'none';
-    document.querySelector('main').style.display = 'none';
+    const mainCrm = document.getElementById('crm-main');
+    const adminPanel = document.getElementById('admin-panel');
+    if(mainCrm) mainCrm.style.display = 'none';
+    if(adminPanel) adminPanel.style.display = 'none';
     
+    // Crear la pantalla de login si no existe
     if (!document.getElementById('login-container')) {
         const loginHTML = `
-            <div id="login-container" style="display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f2f5;">
-                <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center;">
-                    <h2 style="color: #005c4b; margin-bottom: 20px;">Grisalis CRM</h2>
-                    <input type="text" id="login-user" placeholder="Usuario" style="width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box;">
-                    <input type="password" id="login-pass" placeholder="Contraseña" style="width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box;">
-                    <button onclick="iniciarSesion()" id="btn-login" style="width: 100%; padding: 12px; background: #005c4b; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; font-size: 16px;">Entrar al CRM</button>
-                    <p id="login-error" style="color: red; margin-top: 15px; display: none; font-size: 14px;"></p>
+            <div id="login-container" style="display: flex; justify-content: center; align-items: center; min-height: 100vh; background: linear-gradient(135deg, #2a266b 0%, #100f2c 100%); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; position: fixed; top: 0; left: 0; width: 100%; z-index: 10000;">
+                <style>
+                    /* Fondo con ondas/figuras abstractas emulando el diseño */
+                    #login-container::before {
+                        content: '';
+                        position: absolute;
+                        width: 800px; height: 800px;
+                        background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(0,0,0,0) 60%);
+                        top: -200px; left: -200px;
+                        z-index: -1;
+                    }
+                    #login-container::after {
+                        content: '';
+                        position: absolute;
+                        width: 600px; height: 600px;
+                        background: radial-gradient(circle, rgba(156,39,176,0.1) 0%, rgba(0,0,0,0) 60%);
+                        bottom: -100px; right: -100px;
+                        z-index: -1;
+                    }
+                    /* Tarjeta Glassmorphism */
+                    .login-card {
+                        display: flex;
+                        width: 900px;
+                        max-width: 95%;
+                        background: rgba(255, 255, 255, 0.03);
+                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        border-radius: 20px;
+                        box-shadow: 0 25px 50px rgba(0,0,0,0.3);
+                        backdrop-filter: blur(12px);
+                        overflow: hidden;
+                    }
+                    /* Columna Izquierda (Ilustración) */
+                    .login-left {
+                        flex: 1;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        padding: 40px;
+                        background: radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, transparent 70%);
+                    }
+                    .login-left img {
+                        max-width: 90%;
+                        animation: float 4s ease-in-out infinite;
+                    }
+                    @keyframes float {
+                        0% { transform: translateY(0px); }
+                        50% { transform: translateY(-15px); }
+                        100% { transform: translateY(0px); }
+                    }
+                    /* Columna Derecha (Formulario) */
+                    .login-right {
+                        flex: 1;
+                        padding: 50px 60px;
+                        color: white;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                    }
+                    .login-logo {
+                        font-size: 26px;
+                        font-weight: 800;
+                        text-align: center;
+                        margin-bottom: 35px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 10px;
+                        letter-spacing: 1px;
+                    }
+                    .form-group {
+                        margin-bottom: 22px;
+                    }
+                    .form-group label {
+                        display: flex;
+                        justify-content: space-between;
+                        font-size: 13px;
+                        margin-bottom: 8px;
+                        font-weight: 500;
+                        color: #e5e7eb;
+                    }
+                    .form-group input[type="text"],
+                    .form-group input[type="password"] {
+                        width: 100%;
+                        padding: 14px 15px;
+                        border: none;
+                        border-radius: 8px;
+                        background: white;
+                        color: #1f2937;
+                        font-size: 14px;
+                        box-sizing: border-box;
+                        outline: none;
+                        transition: box-shadow 0.3s;
+                    }
+                    .form-group input:focus {
+                        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4);
+                    }
+                    .forgot-link {
+                        color: #60a5fa;
+                        text-decoration: none;
+                        font-size: 12px;
+                        transition: color 0.3s;
+                    }
+                    .forgot-link:hover { color: #93c5fd; }
+                    .checkbox-group {
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-size: 13px;
+                        margin-bottom: 30px;
+                        color: #d1d5db;
+                    }
+                    .checkbox-group input[type="checkbox"] {
+                        accent-color: #3b82f6;
+                        width: 16px; height: 16px;
+                    }
+                    .btn-submit {
+                        width: 100%;
+                        padding: 15px;
+                        background: #3b82f6;
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        font-size: 16px;
+                        font-weight: bold;
+                        cursor: pointer;
+                        transition: background 0.3s, transform 0.1s;
+                        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+                    }
+                    .btn-submit:hover { background: #2563eb; }
+                    .btn-submit:active { transform: scale(0.98); }
+                    .register-link {
+                        text-align: center;
+                        font-size: 13px;
+                        margin-top: 25px;
+                        color: #d1d5db;
+                    }
+                    .register-link a {
+                        color: #60a5fa;
+                        text-decoration: none;
+                        font-weight: bold;
+                    }
+                    .divider {
+                        display: flex;
+                        align-items: center;
+                        text-align: center;
+                        margin: 25px 0;
+                        color: #9ca3af;
+                        font-size: 12px;
+                    }
+                    .divider::before, .divider::after {
+                        content: '';
+                        flex: 1;
+                        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+                    }
+                    .divider:not(:empty)::before { margin-right: 1em; }
+                    .divider:not(:empty)::after { margin-left: 1em; }
+                    .social-login {
+                        display: flex;
+                        justify-content: center;
+                        gap: 15px;
+                    }
+                    .social-icon {
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 50%;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        background: rgba(255,255,255,0.08);
+                        cursor: pointer;
+                        transition: background 0.3s;
+                        font-size: 14px;
+                    }
+                    .social-icon:hover { background: rgba(255,255,255,0.15); }
+                    @media (max-width: 768px) {
+                        .login-left { display: none; }
+                        .login-right { padding: 40px 30px; }
+                    }
+                </style>
+                <div class="login-card">
+                    <div class="login-left">
+                        <!-- Imagen 3D del robot animada (flotando) -->
+                        <img src="https://cdn3d.iconscout.com/3d/premium/thumb/robot-4993685-4159518.png" alt="AiCRM Robot">
+                    </div>
+                    <div class="login-right">
+                        <div class="login-logo">
+                            <span style="background: white; color: #2a266b; padding: 2px 8px; border-radius: 8px;">∞</span> Grisalis CRM
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="login-user">Usuario</label>
+                            <input type="text" id="login-user" placeholder="Ej: User123!">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="login-pass">
+                                <span>Contraseña</span>
+                                <a href="#" class="forgot-link">¿Olvidaste la contraseña?</a>
+                            </label>
+                            <input type="password" id="login-pass" placeholder="••••••••••••">
+                        </div>
+                        
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="remember">
+                            <label for="remember">Recordarme</label>
+                        </div>
+                        
+                        <button onclick="iniciarSesion()" id="btn-login" class="btn-submit">Sign In</button>
+                        <p id="login-error" style="color: #fca5a5; margin-top: 15px; display: none; font-size: 14px; text-align: center;"></p>
+                        
+                        <div class="register-link">
+                            ¿Nuevo en la plataforma? <a href="#">Crea una cuenta</a>
+                        </div>
+                        
+                        <div class="divider">or</div>
+                        
+                        <div class="social-login">
+                            <div class="social-icon" style="color: #60a5fa;">f</div>
+                            <div class="social-icon">𝕏</div>
+                            <div class="social-icon" style="color: #f87171;">✉</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
