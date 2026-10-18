@@ -23,9 +23,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// ==========================================
+
 // 🧠 MOTOR MULTI-WHATSAPP MEJORADO (CON MEMORIA DE QR)
-// ==========================================
+
 const waClients = new Map();
 const waQrCodes = new Map();   
 const waStatuses = new Map();  
