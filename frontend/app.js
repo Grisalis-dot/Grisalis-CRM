@@ -298,6 +298,8 @@ function configurarSocketsPrivados() {
             waText.style.color = 'green';
             btnQR.style.display = 'none';
             cerrarModalQR(); 
+            // NUEVO: Apenas conecte, disparamos la verificación de números silenciosamente
+            verificarNumerosPendientes();
         } else {
             waText.style.color = 'orange';
             btnQR.style.display = 'block'; 
@@ -463,6 +465,8 @@ function pintarTabla() {
 }
 
 async function verificarNumerosPendientes() {
+// 🛡️ CORRECCIÓN: Manejo completamente silencioso sin errores en consola
+async function verificarNumerosPendientes() {
     const startIndex = (currentPage - 1) * rowsPerPage;
     const endIndex = startIndex + rowsPerPage;
     const prospectosPagina = prospectosFiltrados.slice(startIndex, endIndex);
@@ -473,9 +477,13 @@ async function verificarNumerosPendientes() {
                 const numCodificado = encodeURIComponent(p['Contacto (Tel / WhatsApp)']);
                 const res = await fetchConToken(`/api/verificar-numero/${numCodificado}`);
                 
-                if (!res.ok) continue; // Si WhatsApp no está listo, saltamos al siguiente
+                if (!res.ok) continue; 
 
                 const data = await res.json();
+                
+                // Si el backend dice "esperando", saltamos y no hacemos nada
+                if (data.esperando) continue;
+
                 if (typeof data.valido === 'boolean') {
                     p.wa_valido = data.valido; 
                     const iconSpan = document.getElementById(`wa-icon-${p.id}`);
@@ -755,4 +763,5 @@ if (localStorage.getItem('crm_token')) {
     arrancarApp();
 } else {
     mostrarPantallaLogin();
+}
 }

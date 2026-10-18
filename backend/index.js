@@ -203,10 +203,24 @@ function soloAdmin(req, res, next) {
 // ==========================================
 // 👥 MÓDULO DE GESTIÓN DE USUARIOS
 // ==========================================
-app.get('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
-    const { data, error } = await supabase.from('usuarios').select('id, usuario, rol, creado_en').order('creado_en', { ascending: false });
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+// 🛡️ CORRECCIÓN: Ruta segura y silenciosa para verificación de números
+app.get('/api/verificar-numero/:numero', verificarToken, async (req, res) => {
+    try {
+        const numeroOriginal = req.params.numero;
+        if (numeroOriginal.includes('@lid')) return res.json({ valido: true }); 
+        const numeroLimpio = numeroOriginal.replace(/\D/g, '');
+        if (!numeroLimpio) return res.json({ valido: false });
+        
+        // Respondemos un JSON normal para que el navegador no pinte errores rojos en consola
+        const status = waStatuses.get(req.user.id);
+        if (status !== 'Conectado') return res.json({ esperando: true });
+
+        const client = waClients.get(req.user.id);
+        if (!client) return res.json({ esperando: true });
+
+        const contactoValido = await client.getNumberId(numeroLimpio);
+        res.json({ valido: !!contactoValido }); 
+    } catch (error) { res.json({ valido: false }); }
 });
 
 app.post('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
