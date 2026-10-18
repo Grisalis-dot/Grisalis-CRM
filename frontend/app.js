@@ -68,7 +68,7 @@ function mostrarPantallaLogin() {
                         backdrop-filter: blur(12px);
                         overflow: hidden;
                     }
-                    /* Columna Izquierda (Ilustración) */
+                    /* Columna Izquierda (Ilustración/Logo) */
                     .login-left {
                         flex: 1;
                         display: flex;
@@ -78,7 +78,7 @@ function mostrarPantallaLogin() {
                         background: radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, transparent 70%);
                     }
                     .login-left img {
-                        max-width: 90%;
+                        max-width: 80%;
                         animation: float 4s ease-in-out infinite;
                     }
                     @keyframes float {
@@ -167,50 +167,6 @@ function mostrarPantallaLogin() {
                     }
                     .btn-submit:hover { background: #2563eb; }
                     .btn-submit:active { transform: scale(0.98); }
-                    .register-link {
-                        text-align: center;
-                        font-size: 13px;
-                        margin-top: 25px;
-                        color: #d1d5db;
-                    }
-                    .register-link a {
-                        color: #60a5fa;
-                        text-decoration: none;
-                        font-weight: bold;
-                    }
-                    .divider {
-                        display: flex;
-                        align-items: center;
-                        text-align: center;
-                        margin: 25px 0;
-                        color: #9ca3af;
-                        font-size: 12px;
-                    }
-                    .divider::before, .divider::after {
-                        content: '';
-                        flex: 1;
-                        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-                    }
-                    .divider:not(:empty)::before { margin-right: 1em; }
-                    .divider:not(:empty)::after { margin-left: 1em; }
-                    .social-login {
-                        display: flex;
-                        justify-content: center;
-                        gap: 15px;
-                    }
-                    .social-icon {
-                        width: 38px;
-                        height: 38px;
-                        border-radius: 50%;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        background: rgba(255,255,255,0.08);
-                        cursor: pointer;
-                        transition: background 0.3s;
-                        font-size: 14px;
-                    }
-                    .social-icon:hover { background: rgba(255,255,255,0.15); }
                     @media (max-width: 768px) {
                         .login-left { display: none; }
                         .login-right { padding: 40px 30px; }
@@ -218,8 +174,8 @@ function mostrarPantallaLogin() {
                 </style>
                 <div class="login-card">
                     <div class="login-left">
-                        <!-- Imagen 3D del robot animada (flotando) -->
-                        <img src="https://cdn3d.iconscout.com/3d/premium/thumb/robot-4993685-4159518.png" alt="AiCRM Robot">
+                        <!-- AQUÍ ESTÁ TU LOGO LOCAL -->
+                        <img src="imag/logo.png" alt="Logo Grisalis CRM">
                     </div>
                     <div class="login-right">
                         <div class="login-logo">
@@ -246,18 +202,6 @@ function mostrarPantallaLogin() {
                         
                         <button onclick="iniciarSesion()" id="btn-login" class="btn-submit">Sign In</button>
                         <p id="login-error" style="color: #fca5a5; margin-top: 15px; display: none; font-size: 14px; text-align: center;"></p>
-                        
-                        <div class="register-link">
-                            ¿Nuevo en la plataforma? <a href="#">Crea una cuenta</a>
-                        </div>
-                        
-                        <div class="divider">or</div>
-                        
-                        <div class="social-login">
-                            <div class="social-icon" style="color: #60a5fa;">f</div>
-                            <div class="social-icon">𝕏</div>
-                            <div class="social-icon" style="color: #f87171;">✉</div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -518,7 +462,6 @@ function pintarTabla() {
     verificarNumerosPendientes();
 }
 
-// 🛡️ CORRECCIÓN: Manejo silencioso de errores 503
 async function verificarNumerosPendientes() {
     const startIndex = (currentPage - 1) * rowsPerPage;
     const endIndex = startIndex + rowsPerPage;
