@@ -16,4 +16,5 @@ Thumbs.db
 
 # Excel local (Ya todo está en Supabase)
 data/*.xlsx
+backend/data/
 .cache

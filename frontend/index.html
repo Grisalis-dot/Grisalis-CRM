@@ -1,185 +1,976 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Prospectos - Grisalis CRM</title>
-    <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Grisalis CRM</title>
     <style>
-        /* Estilos adicionales para la barra superior corporativa */
-        .top-bar {
-            background: #005c4b;
-            color: white;
-            padding: 10px 20px;
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        :root {
+            --bg: #f1f5f9;
+            --panel: #ffffff;
+            --panel-muted: #f8fafc;
+            --line: #e2e8f0;
+            --text: #0f172a;
+            --muted: #64748b;
+            --primary: #2563eb;
+            --primary-soft: #dbeafe;
+            --success: #16a34a;
+            --success-soft: #dcfce7;
+            --warning: #f59e0b;
+            --warning-soft: #fef3c7;
+            --danger: #ef4444;
+            --danger-soft: #fee2e2;
+            --teal: #0f766e;
+            --teal-soft: #ccfbf1;
+            --shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+            --radius: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            min-height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
             display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        button, input, select, textarea {
+            font: inherit;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        header {
+            display: none;
+            background: rgba(255, 255, 255, 0.96);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--line);
+            height: 70px;
+            width: 100%;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+
+        .topbar-inner {
+            width: min(100%, 1680px);
+            margin: 0 auto;
+            height: 100%;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
             justify-content: space-between;
-            align-items: center;
+            gap: 16px;
         }
-        .user-info {
+
+        .topbar-brand {
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 10px;
+            min-width: 180px;
         }
-        .logout-btn {
-            background: #dc3545;
-            color: white;
+
+        .topbar-brand h1 {
+            margin: 0;
+            font-size: 1.8rem;
+            line-height: 1;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            color: var(--teal);
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-left: auto;
+        }
+
+        .user-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--muted);
+            font-size: 0.88rem;
+            font-weight: 600;
+        }
+
+        .status-badge,
+        .role-badge,
+        .tag-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .status-badge {
+            gap: 8px;
+            padding: 7px 12px;
+            font-size: 0.78rem;
+            border: 1px solid rgba(22, 163, 74, 0.15);
+            background: var(--success-soft);
+            color: #166534;
+        }
+
+        .status-badge.warning {
+            background: var(--warning-soft);
+            color: #92400e;
+            border-color: rgba(245, 158, 11, 0.22);
+        }
+
+        .status-badge.danger {
+            background: var(--danger-soft);
+            color: #991b1b;
+            border-color: rgba(239, 68, 68, 0.18);
+        }
+
+        .role-badge {
+            padding: 7px 12px;
+            font-size: 0.75rem;
+            background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+            color: #1d4ed8;
+            border: 1px solid rgba(37, 99, 235, 0.15);
+        }
+
+        .btn { 
             border: none;
-            padding: 5px 10px;
-            border-radius: 4px;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: white;
+            box-shadow: 0 10px 24px rgba(37, 99, 235, 0.18);
+        }
+
+        .topbar-cta {
+            padding: 10px 16px;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .btn-ghost {
+            background: var(--panel-muted);
+            color: var(--text);
+            border: 1px solid var(--line);
+        }
+
+        #crm-main {
+            width: min(100%, 1680px);
+            margin: 24px auto 32px;
+            padding: 0 24px;
+            display: flex;
+            align-items: flex-start;
+            gap: 24px;
+            flex: 1;
+        }
+
+        .section-shell {
+            flex: 1 1 auto;
+            min-width: 0;
+            background: var(--panel);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 20px;
+        }
+
+        .ai-bar {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding: 14px 16px;
+            margin-bottom: 18px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #eff6ff, #f8fafc);
+            border: 1px solid rgba(59, 130, 246, 0.12);
+        }
+
+        .ai-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--teal);
+            font-weight: 700;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+
+        .ai-inputs {
+            display: flex;
+            gap: 10px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .field {
+            flex: 1;
+            min-width: 120px;
+            background: rgba(255, 255, 255, 0.7);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 0.92rem;
+            color: var(--text);
+        }
+
+        .field::placeholder {
+            color: #94a3b8;
+        }
+
+        .search-wrap {
+            margin-bottom: 18px;
+        }
+
+        .channel-tabs {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            margin: 0 0 14px;
+            padding: 3px 1px 8px;
+        }
+
+        .channel-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 0 auto;
+            padding: 9px 13px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: #fff;
+            color: #475569;
+            font-size: 0.82rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .channel-tab:hover {
+            background: var(--panel-muted);
+        }
+
+        .channel-tab[aria-pressed="true"] {
+            color: #1d4ed8;
+            background: var(--primary-soft);
+            border-color: #bfdbfe;
+        }
+
+        .channel-tab[data-channel="WhatsApp"][aria-pressed="true"] {
+            color: #166534;
+            background: var(--success-soft);
+            border-color: #bbf7d0;
+        }
+
+        .channel-tab[data-channel="Instagram"][aria-pressed="true"] {
+            color: #9d174d;
+            background: #fce7f3;
+            border-color: #fbcfe8;
+        }
+
+        .channel-tab[data-channel="Facebook"][aria-pressed="true"] {
+            color: #1d4ed8;
+            background: #dbeafe;
+            border-color: #bfdbfe;
+        }
+
+        .canal-tag.whatsapp { background: #dcfce7; color: #166534; }
+        .canal-tag.instagram { background: #fce7f3; color: #9d174d; }
+        .canal-tag.facebook { background: #dbeafe; color: #1d4ed8; }
+
+        .channel-count {
+            min-width: 22px;
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(148, 163, 184, 0.16);
+            color: inherit;
+            text-align: center;
+            font-size: 0.7rem;
+        }
+
+        .search-wrap input {
+            width: 100%;
+            background: rgba(248, 250, 252, 0.9);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 0.96rem;
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .search-wrap input:focus,
+        .field:focus,
+        textarea:focus,
+        select:focus {
+            border-color: rgba(37, 99, 235, 0.35);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
+            outline: none;
+        }
+
+        .table-wrap {
+            width: 100%;
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: linear-gradient(180deg, #ffffff, #ffffff);
+        }
+
+        #prospectos-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1220px;
+        }
+
+        #prospectos-table thead th {
+            background: var(--panel-muted);
+            color: #475569;
+            font-size: 0.78rem;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            font-weight: 700;
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        #prospectos-table tbody td {
+            padding: 14px 12px;
+            border-bottom: 1px solid #edf2f7;
+            color: var(--text);
+            font-size: 0.9rem;
+            vertical-align: middle;
+        }
+
+        #prospectos-table tbody tr {
+            transition: background 0.15s ease;
+        }
+
+        #prospectos-table tbody tr:hover {
+            background: rgba(148, 163, 184, 0.05);
+        }
+
+        .cell-company {
+            font-weight: 700;
+            min-width: 150px;
+        }
+
+        .cell-phone {
+            white-space: nowrap;
+        }
+
+        .status-display {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 12px;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            border: 1px solid transparent;
+            min-width: 84px;
+            justify-content: center;
+        }
+
+        .status-display.nuevo { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
+        .status-display.contactado { background: #dbeafe; color: #1d4ed8; border-color: rgba(37,99,235,0.15); }
+        .status-display.negociacion { background: #fef3c7; color: #92400e; border-color: rgba(245,158,11,0.15); }
+        .status-display.cerrado { background: #dcfce7; color: #166534; border-color: rgba(22,163,74,0.15); }
+        .status-display.nointeresado { background: #fee2e2; color: #991b1b; border-color: rgba(239,68,68,0.15); }
+
+        #prospectos-table select {
+            appearance: none;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 8px 30px 8px 12px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            color: var(--text);
+            background-image: linear-gradient(45deg, transparent 50%, #64748b 50%), linear-gradient(135deg, #64748b 50%, transparent 50%);
+            background-position: calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px);
+            background-size: 5px 5px, 5px 5px;
+            background-repeat: no-repeat;
+            min-width: 120px;
             cursor: pointer;
         }
-        
-        /* Modal para el QR de WhatsApp */
-        #qr-modal {
-            display: none; 
-            position: fixed; 
-            top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(0,0,0,0.8); 
-            z-index: 9999; 
-            justify-content: center; 
+
+        .action-group {
+            display: flex;
             align-items: center;
+            gap: 8px;
+            white-space: nowrap;
         }
-        #qr-box {
-            background: white; 
-            padding: 30px; 
-            border-radius: 10px; 
+
+        .action-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 0.84rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+
+        .action-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-chat {
+            background: var(--primary-soft);
+            color: #1d4ed8;
+        }
+
+        .btn-delete {
+            background: var(--danger-soft);
+            color: #b91c1c;
+        }
+
+        .table-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-top: 18px;
+            padding-top: 4px;
+        }
+
+        .pagination-btn {
+            background: var(--panel);
+            color: var(--text);
+            border: 1px solid var(--line);
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #page-info {
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        #chat-panel {
+            width: 400px;
+            flex: 0 0 400px;
+            display: none;
+            flex-direction: column;
+            background: #f3f4f6;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            min-height: 760px;
+            max-height: 82vh;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #0f766e, #115e59);
+            color: white;
+            padding: 16px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .chat-header > div {
+            min-width: 0;
+        }
+
+        #chat-nombre {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #chat-numero {
+            display: block;
+            margin-top: 4px;
+            font-size: 0.72rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .chat-close {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            border: none;
+            background: rgba(255, 255, 255, 0.12);
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 14px;
+            background: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .msg-bubble {
+            max-width: 82%;
+            padding: 10px 12px;
+            border-radius: 14px;
+            font-size: 0.92rem;
+            line-height: 1.45;
+            box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+            word-break: break-word;
+        }
+
+        .msg-bubble.in {
+            background: white;
+            color: var(--text);
+            align-self: flex-start;
+            border-top-left-radius: 4px;
+        }
+
+        .msg-bubble.out {
+            background: #dbeafe;
+            color: #1e3a8a;
+            align-self: flex-end;
+            border-top-right-radius: 4px;
+        }
+
+        .composer {
+            background: var(--panel);
+            border-top: 1px solid var(--line);
+            padding: 14px 14px 16px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        #chat-input {
+            flex: 1;
+            min-height: 52px;
+            max-height: 120px;
+            resize: vertical;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 12px 14px;
+            background: #f8fafc;
+            color: var(--text);
+        }
+
+        .chat-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #btn-enviar,
+        #btn-sugerir {
+            padding: 10px 14px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700;
+            transition: transform 0.15s ease, opacity 0.15s ease;
+        }
+
+        #btn-enviar {
+            background: var(--primary);
+            color: white;
+        }
+
+        #btn-sugerir {
+            background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+            color: white;
+            min-width: 104px;
+        }
+
+        #qr-modal {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.46);
+            backdrop-filter: blur(8px);
+            z-index: 50;
+            padding: 20px;
+        }
+
+        .qr-card {
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 22px;
+            padding: 28px 28px 20px;
+            width: min(100%, 420px);
+            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.2);
             text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .qr-card h3 {
+            margin: 0 0 10px;
+            font-size: 1.35rem;
+            color: var(--teal);
+        }
+
+        .qr-card p {
+            margin: 0 auto 18px;
+            max-width: 260px;
+            color: var(--muted);
+            font-size: 0.86rem;
+            line-height: 1.5;
+        }
+
+        #qr-image {
+            display: block;
+            width: 260px;
+            height: 260px;
+            margin: 0 auto 18px;
+            padding: 12px;
+            border-radius: 18px;
+            background: white;
+            border: 1px solid var(--line);
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.02);
+        }
+
+        .qr-actions {
+            display: flex;
+            justify-content: center;
+        }
+
+        .qr-actions button {
+            background: var(--panel-muted);
+            color: var(--text);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #admin-panel {
+            width: min(100%, 1680px);
+            margin: 24px auto 32px;
+            padding: 0 24px;
+            display: none;
+            gap: 24px;
+            align-items: flex-start;
+        }
+
+        .admin-panel-card {
+            background: var(--panel);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 22px;
+        }
+
+        .admin-panel-card.left {
+            flex: 0 0 360px;
+        }
+
+        .admin-panel-card.right {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .panel-title {
+            margin: 0 0 18px;
+            font-size: 1.15rem;
+            color: var(--teal);
+        }
+
+        .admin-form input,
+        .admin-form select {
+            width: 100%;
+            background: #f8fafc;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 16px;
+            color: var(--text);
+        }
+
+        .admin-form-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .admin-form-actions .btn {
+            flex: 1;
+            padding: 11px 14px;
+            font-weight: 700;
+        }
+
+        #usuarios-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #usuarios-table thead th {
+            background: var(--panel-muted);
+            color: #475569;
+            padding: 12px 10px;
+            font-size: 0.76rem;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            text-align: left;
+            border-bottom: 1px solid var(--line);
+        }
+
+        #usuarios-table tbody td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #edf2f7;
+            color: var(--text);
+        }
+
+        .admin-table-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .mini-btn {
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 8px 10px;
+        }
+
+        .mini-btn.edit {
+            background: var(--primary-soft);
+            color: #1d4ed8;
+        }
+
+        .mini-btn.delete {
+            background: var(--danger-soft);
+            color: #b91c1c;
+        }
+
+        @media (max-width: 1180px) {
+            #crm-main {
+                flex-direction: column;
+            }
+
+            #chat-panel {
+                width: 100%;
+                max-width: 100%;
+                flex-basis: auto;
+                min-height: 620px;
+            }
+
+            .topbar-inner {
+                padding: 0 16px;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .topbar-inner {
+                gap: 10px;
+                padding: 0 12px;
+            }
+
+            .topbar-brand h1 {
+                font-size: 1.35rem;
+            }
+
+            .topbar-actions {
+                gap: 8px;
+                flex-wrap: wrap;
+                justify-content: flex-end;
+            }
+
+            .user-meta {
+                font-size: 0.72rem;
+            }
+
+            .ai-bar {
+                flex-wrap: wrap;
+            }
+
+            .ai-inputs {
+                width: 100%;
+                flex-direction: column;
+            }
+
+            #crm-main,
+            #admin-panel {
+                padding: 0 14px;
+                margin-top: 16px;
+            }
         }
     </style>
 </head>
 <body>
-    <header style="display: none;">
-        <div class="top-bar">
-            <h1 style="margin: 0; font-size: 20px;">Grisalis CRM</h1>
-            <div class="user-info">
-                <span id="user-name-display" style="font-weight: bold;"></span>
-                <span id="user-role-badge" style="background: #25D366; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold;"></span>
-                
-                <!-- NUEVO BOTÓN ADMIN -->
-                <button id="btn-admin-panel" onclick="toggleAdminPanel()" style="display:none; background: #9c27b0; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">👥 Usuarios</button>
-                
-                <button class="logout-btn" onclick="cerrarSesion()">Cerrar Sesión</button>
+    <header>
+        <div class="topbar-inner">
+            <div class="topbar-brand">
+                <h1>Grisalis CRM</h1>
             </div>
-        </div>
-        <div style="padding: 10px 20px; background: #f0f2f5; display: flex; align-items: center; gap: 10px;">
-            <p id="wa-status" style="color: orange; font-weight: bold; margin: 0;">WhatsApp: Conectando servidor...</p>
-            <button id="btn-show-qr" onclick="mostrarModalQR()" style="display: none; background: #25D366; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Ver Código QR</button>
+
+            <div class="topbar-actions">
+                <div class="user-meta">
+                    <span id="user-name-display">Hola, admin</span>
+                    <span id="user-role-badge" class="role-badge">Administrador</span>
+                </div>
+                <div class="status-badge warning" id="wa-status">WhatsApp: Conectando...</div>
+                <button id="btn-show-qr" class="btn btn-primary topbar-cta" onclick="mostrarModalQR()" style="display:none;">Ver QR</button>
+                <button id="btn-admin-panel" class="btn btn-primary topbar-cta" onclick="toggleAdminPanel()" style="display:none;">Usuarios</button>
+                <button class="btn btn-ghost topbar-cta" onclick="cerrarSesion()">Cerrar Sesión</button>
+            </div>
         </div>
     </header>
 
-    <!-- Ventana Modal para el QR -->
     <div id="qr-modal">
-        <div id="qr-box">
-            <h3 style="margin-top: 0; color: #005c4b;">Vincula tu WhatsApp</h3>
-            <p style="font-size: 14px; color: #555; max-width: 250px; margin: 0 auto 15px auto;">Abre WhatsApp en tu teléfono, toca Menú > Dispositivos vinculados > Vincular un dispositivo.</p>
-            <img id="qr-image" src="" alt="Cargando QR..." style="width: 250px; height: 250px; border: 1px solid #ddd; padding: 10px; border-radius: 8px;">
-            <br><br>
-            <button onclick="cerrarModalQR()" style="background: #ccc; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">Cerrar esta ventana</button>
+        <div class="qr-card">
+            <h3>Vincula tu WhatsApp</h3>
+            <p>Abre WhatsApp en tu teléfono, entra en Menú &gt; Dispositivos vinculados &gt; Vincular un dispositivo.</p>
+            <img id="qr-image" src="" alt="Cargando QR..." />
+            <div class="qr-actions">
+                <button onclick="cerrarModalQR()">Cerrar</button>
+            </div>
         </div>
     </div>
 
-    <!-- MAIN DEL CRM (VISTA DE VENTAS) -->
-    <main id="crm-main" style="display: none; gap: 20px; padding: 20px;">
-        <section style="flex: 2; overflow-x: auto;">
-            <div class="ia-panel" style="background: #e8f0fe; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center;">
-                <strong>🤖 Asistente IA:</strong>
-                <input type="text" id="ia-nicho" placeholder="Ej. Clínicas Dentales" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;">
-                <input type="text" id="ia-ciudad" placeholder="Ej. Barranquilla" value="Barranquilla" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;">
-                <button onclick="generarConIA()" id="btn-ia" style="background: #1a73e8; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold;">
-                    Buscar y Agregar
-                </button>
+    <main id="crm-main">
+        <section class="section-shell" aria-label="Tabla de prospectos">
+            <div class="ai-bar">
+                <div class="ai-label">🤖 Asistente IA</div>
+                <div class="ai-inputs">
+                    <input type="text" id="ia-nicho" class="field" placeholder="Ej. Clínicas Dentales" />
+                    <input type="text" id="ia-ciudad" class="field" placeholder="Ej. Barranquilla" value="Barranquilla" />
+                </div>
+                <button onclick="generarConIA()" id="btn-ia" class="btn btn-primary" style="padding: 12px 18px; font-weight: 700;">Buscar y Agregar</button>
             </div>
 
-            <div class="search-panel" style="margin-bottom: 15px;">
-                <input type="text" id="buscador" onkeyup="filtrarTabla()" placeholder="🔍 Buscar empresa, nicho o teléfono..." style="width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; box-sizing: border-box;">
+            <nav class="channel-tabs" id="channel-tabs" aria-label="Filtrar prospectos por red social">
+                <button type="button" class="channel-tab" data-channel="Todos" aria-pressed="true" onclick="filtrarPorCanal('Todos')">Todos <span class="channel-count" id="channel-count-todos">0</span></button>
+                <button type="button" class="channel-tab" data-channel="WhatsApp" aria-pressed="false" onclick="filtrarPorCanal('WhatsApp')">🟢 WhatsApp <span class="channel-count" id="channel-count-whatsapp">0</span></button>
+                <button type="button" class="channel-tab" data-channel="Instagram" aria-pressed="false" onclick="filtrarPorCanal('Instagram')">📸 Instagram <span class="channel-count" id="channel-count-instagram">0</span></button>
+                <button type="button" class="channel-tab" data-channel="Facebook" aria-pressed="false" onclick="filtrarPorCanal('Facebook')">ⓕ Facebook <span class="channel-count" id="channel-count-facebook">0</span></button>
+            </nav>
+
+            <div class="search-wrap">
+                <input type="text" id="buscador" onkeyup="filtrarTabla()" placeholder="Buscar empresa, nicho o teléfono..." />
             </div>
 
-            <table id="prospectos-table" style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                <thead>
-                    <tr style="background: #0044cc; color: white; text-align: left;">
-                        <th style="padding: 10px;">Empresa</th>
-                        <th style="padding: 10px;">Nicho</th>
-                        <th style="padding: 10px;">Contacto</th>
-                        <th style="padding: 10px;">Correo</th>
-                        <th style="padding: 10px;">Dirección</th>
-                        <th style="padding: 10px;">Observaciones</th>
-                        <th style="padding: 10px;" id="columna-vendedor" style="display:none;">Vendedor</th>
-                        <th style="padding: 10px;">Estado</th>
-                        <th style="padding: 10px;">Acción</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr><td colspan="9" style="padding: 10px; text-align: center;">Cargando datos...</td></tr>
-                </tbody>
-            </table>
+            <div class="table-wrap">
+                <table id="prospectos-table">
+                    <thead>
+                        <tr>
+                            <th>Empresa</th>
+                            <th>Nicho</th>
+                            <th>Contacto</th>
+                            <th>Correo</th>
+                            <th>Dirección</th>
+                            <th>Observaciones</th>
+                            <th id="columna-vendedor">Vendedor</th>
+                            <th>Canal</th>
+                            <th>Estado</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td colspan="10" style="text-align:center; color:#64748b; padding: 20px;">Cargando datos...</td></tr>
+                    </tbody>
+                </table>
+            </div>
 
-            <div id="pagination-controls" style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
-                <button onclick="cambiarPagina(-1)" id="btn-prev" style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px;">⬅ Anterior</button>
-                <span id="page-info" style="font-weight: bold;">Página 1 de 1</span>
-                <button onclick="cambiarPagina(1)" id="btn-next" style="padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: #f9f9f9; border-radius: 4px;">Siguiente ➡</button>
+            <div class="table-footer">
+                <button class="pagination-btn" onclick="cambiarPagina(-1)" id="btn-prev">← Anterior</button>
+                <span id="page-info">Página 1 de 1</span>
+                <button class="pagination-btn" onclick="cambiarPagina(1)" id="btn-next">Siguiente →</button>
             </div>
         </section>
 
-        <aside id="chat-panel" style="flex: 1; background: #f0f0f0; border-radius: 8px; display: none; flex-direction: column; height: 80vh;">
-            <div id="chat-header" style="background: #005c4b; color: white; padding: 15px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
+        <aside id="chat-panel" aria-label="Panel de chat">
+            <div class="chat-header">
                 <div>
-                    <h3 id="chat-nombre" style="margin: 0;">Selecciona un cliente</h3>
-                    <span id="chat-numero" style="font-size: 12px;"></span>
+                    <h3 id="chat-nombre">Selecciona un cliente</h3>
+                    <span id="chat-numero"></span>
                 </div>
-                <button onclick="cerrarChat()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; padding: 0 5px;" title="Cerrar chat">✖</button>
-            </div>
-            
-            <div id="chat-messages" style="flex: 1; padding: 15px; overflow-y: auto; background: #efeae2; display: flex; flex-direction: column; gap: 10px;">
+                <button class="chat-close" onclick="cerrarChat()" aria-label="Cerrar chat">✕</button>
             </div>
 
-            <div style="padding: 15px; background: white; border-radius: 0 0 8px 8px; display: flex; gap: 10px; align-items: flex-end;">
-                <textarea id="chat-input" placeholder="Escribe un mensaje..." style="flex: 1; resize: none; border-radius: 5px; padding: 10px; border: 1px solid #ccc; height: 60px;"></textarea>
-                <div style="display: flex; flex-direction: column; gap: 5px;">
-                    <button onclick="enviarMensaje()" style="background: #1a73e8; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">Enviar</button>
-                    <button onclick="sugerirRespuesta()" id="btn-sugerir" style="background: #9c27b0; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;" title="La IA redactará una respuesta">✨ Sugerir</button>
+            <div id="chat-messages">
+            </div>
+
+            <div class="composer">
+                <textarea id="chat-input" placeholder="Escribe un mensaje..."></textarea>
+                <div class="chat-actions">
+                    <button id="btn-enviar" onclick="enviarMensaje()">Enviar</button>
+                    <button id="btn-sugerir" onclick="sugerirRespuesta()" title="La IA redactará una respuesta">✨ Sugerir</button>
                 </div>
             </div>
         </aside>
     </main>
 
-    <!-- NUEVO: MAIN DE ADMINISTRACIÓN (Solo visible al darle clic al botón) -->
-    <main id="admin-panel" style="display: none; padding: 20px; max-width: 1000px; margin: 0 auto; gap: 20px; flex-direction: row; align-items: flex-start;">
-        
-        <div style="flex: 1; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-            <h3 style="margin-top: 0; color: #005c4b;">Crear / Editar Usuario</h3>
-            <input type="hidden" id="admin-user-id">
-            <input type="text" id="admin-user-name" placeholder="Nombre de usuario" style="padding: 10px; margin-bottom: 15px; width: 100%; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-            <input type="password" id="admin-user-pass" placeholder="Contraseña nueva" style="padding: 10px; margin-bottom: 15px; width: 100%; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-            <select id="admin-user-rol" style="padding: 10px; margin-bottom: 20px; width: 100%; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-                <option value="vendedor">Vendedor</option>
-                <option value="admin">Administrador</option>
-            </select>
-            <div style="display: flex; gap: 10px;">
-                <button onclick="guardarUsuario()" style="background: #1a73e8; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; flex: 1;">💾 Guardar</button>
-                <button onclick="limpiarFormularioUsuario()" style="background: #ccc; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer;">Cancelar</button>
+    <main id="admin-panel">
+        <div class="admin-panel-card left">
+            <h3 class="panel-title">Crear / Editar Usuario</h3>
+            <div class="admin-form">
+                <input type="hidden" id="admin-user-id" />
+                <input type="text" id="admin-user-name" placeholder="Nombre de usuario" />
+                <input type="password" id="admin-user-pass" placeholder="Contraseña nueva" />
+                <select id="admin-user-rol">
+                    <option value="vendedor">Vendedor</option>
+                    <option value="admin">Administrador</option>
+                </select>
+                <div class="admin-form-actions">
+                    <button class="btn btn-primary" onclick="guardarUsuario()">Guardar</button>
+                    <button class="btn btn-ghost" onclick="limpiarFormularioUsuario()">Cancelar</button>
+                </div>
             </div>
         </div>
 
-        <div style="flex: 2; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow-x: auto;">
-            <h3 style="margin-top: 0; color: #005c4b;">Lista de Usuarios</h3>
-            <table id="usuarios-table" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <div class="admin-panel-card right">
+            <h3 class="panel-title">Lista de usuarios</h3>
+            <table id="usuarios-table">
                 <thead>
-                    <tr style="background: #005c4b; color: white; text-align: left;">
-                        <th style="padding: 10px;">Usuario</th>
-                        <th style="padding: 10px;">Rol</th>
-                        <th style="padding: 10px;">Acciones</th>
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Rol</th>
+                        <th>Acciones</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <!-- Se llenará con JS -->
-                </tbody>
+                <tbody></tbody>
             </table>
         </div>
     </main>
 
     <script src="/socket.io/socket.io.js"></script>
-    <!-- NUEVA LIBRERÍA: Generador de QR interno antibloqueos -->
     <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
     <script src="app.js"></script>
 </body>

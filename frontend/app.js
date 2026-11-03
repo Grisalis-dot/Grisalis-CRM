@@ -3,12 +3,21 @@ let prospectosGlobal = [];
 let prospectosFiltrados = [];
 let chatActualIndex = null;
 let currentPage = 1;
+let canalSeleccionado = 'Todos';
 const rowsPerPage = 10;
 
 // Variables de sesión
 let crmUserId = null;
 let crmUserRole = null;
 let crmUserName = null;
+
+function obtenerCanalProspecto(p) {
+    const canal = (p && (p.canal || p['Canal'] || p['Red social'] || p.red_social)) || 'WhatsApp';
+    const valor = String(canal).trim().toLowerCase();
+    if (valor === 'instagram') return 'Instagram';
+    if (valor === 'facebook') return 'Facebook';
+    return 'WhatsApp';
+}
 
 // ==========================================
 // 🔒 SISTEMA DE LOGIN Y SESIÓN
@@ -274,7 +283,9 @@ socket.on(`wa_status_${crmUserId}`, (status) => {
 
 function procesarMensajeVisual(data) {
     const numIncoming = data.numero;
-    const prospectoIndex = prospectosGlobal.findIndex(p => {
+    const prospectoIndex = data.prospecto_id
+        ? prospectosGlobal.findIndex(p => p.id === data.prospecto_id)
+        : prospectosGlobal.findIndex(p => {
         const telLimpiado = (p['Contacto (Tel / WhatsApp)'] || '').replace(/\D/g, '');
         return telLimpiado === numIncoming || p['Contacto (Tel / WhatsApp)'] === numIncoming;
     });
@@ -315,9 +326,8 @@ async function cargarProspectos() {
         });
 
         prospectosGlobal = nuevosDatos;
-        prospectosFiltrados = [...prospectosGlobal];
-        currentPage = 1;
-        pintarTabla();
+        actualizarContadoresCanales();
+        filtrarTabla();
     } catch (error) { console.error('Error cargando prospectos:', error); }
 }
 
@@ -334,7 +344,7 @@ function pintarTabla() {
     const prospectosPagina = prospectosFiltrados.slice(startIndex, endIndex);
 
     if (prospectosPagina.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${crmUserRole === 'admin' ? 9 : 8}" style="padding: 10px; text-align: center;">No hay prospectos en tu lista.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${crmUserRole === 'admin' ? 10 : 9}" style="padding: 10px; text-align: center;">No hay prospectos en tu lista.</td></tr>`;
     }
 
     prospectosPagina.forEach(p => {
@@ -342,6 +352,8 @@ function pintarTabla() {
         const tr = document.createElement('tr');
         const numero = p['Contacto (Tel / WhatsApp)'] || '';
         const estadoActual = p['Estado'] || 'Nuevo';
+        const canalActual = obtenerCanalProspecto(p);
+        const canalClass = canalActual === 'Instagram' ? 'instagram' : canalActual === 'Facebook' ? 'facebook' : 'whatsapp';
         
         let iconWA = '⏳';
         if (p.wa_valido === true) iconWA = '🟢';
@@ -357,7 +369,13 @@ function pintarTabla() {
 
         const noLeidos = p.mensajesNoLeidos || 0;
         let botonChatHTML = '';
-        if (numero.includes('No disponible') || numero.trim() === '') {
+        if (canalActual !== 'WhatsApp') {
+            if (p.social_recipient_id && p.social_account_id) {
+                botonChatHTML = `<button style="background: #e0e7ff; color: #3730a3; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 700;" onclick="abrirChat(${globalIndex})">Abrir ${canalActual}</button>`;
+            } else {
+                botonChatHTML = `<span style="display:inline-flex; align-items:center; padding: 8px 10px; border-radius: 8px; background: #f1f5f9; color: #475569; font-weight: 700;">${canalActual} · Vincula desde Meta</span>`;
+            }
+        } else if (numero.includes('No disponible') || numero.trim() === '') {
             botonChatHTML = '<em style="color: gray; margin-right: 10px;">Sin número</em>';
         } else {
             if (noLeidos > 0) {
@@ -390,6 +408,9 @@ function pintarTabla() {
             <td style="padding: 10px; border-bottom: 1px solid #ddd; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p['Dirección'] || 'N/A'}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${p['Observaciones'] || 'N/A'}</td>
             ${columnaVendedorTr}
+            <td style="padding: 10px; border-bottom: 1px solid #ddd;">
+                <span class="tag-pill canal-tag ${canalClass}" style="padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;">${canalActual}</span>
+            </td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd;">${selectHTML}</td>
             <td style="padding: 10px; border-bottom: 1px solid #ddd; white-space: nowrap;">
                 ${botonChatHTML}
@@ -409,6 +430,7 @@ async function verificarNumerosPendientes() {
     const prospectosPagina = prospectosFiltrados.slice(startIndex, endIndex);
 
     for (const p of prospectosPagina) {
+        if (obtenerCanalProspecto(p) !== 'WhatsApp') continue;
         if (p.wa_valido === undefined && p['Contacto (Tel / WhatsApp)']) {
             try {
                 const numCodificado = encodeURIComponent(p['Contacto (Tel / WhatsApp)']);
@@ -455,11 +477,34 @@ function filtrarTabla() {
     if(!searchInput) return;
     const textoBusqueda = searchInput.value.toLowerCase();
     prospectosFiltrados = prospectosGlobal.filter(p => {
-        const contenido = `${p['Nombre empresa']} ${p['Nicho']} ${p['Contacto (Tel / WhatsApp)']} ${p['Correo']} ${p['Dirección']} ${p['Observaciones']}`.toLowerCase();
-        return contenido.includes(textoBusqueda);
+        const canalActual = obtenerCanalProspecto(p);
+        const contenido = `${p['Nombre empresa']} ${p['Nicho']} ${p['Contacto (Tel / WhatsApp)']} ${p['Correo']} ${p['Dirección']} ${p['Observaciones']} ${canalActual}`.toLowerCase();
+        const coincideCanal = canalSeleccionado === 'Todos' || canalActual === canalSeleccionado;
+        return coincideCanal && contenido.includes(textoBusqueda);
     });
     currentPage = 1;
     pintarTabla();
+}
+
+function filtrarPorCanal(canal) {
+    canalSeleccionado = canal;
+    document.querySelectorAll('#channel-tabs .channel-tab').forEach(tab => {
+        tab.setAttribute('aria-pressed', String(tab.dataset.channel === canal));
+    });
+    filtrarTabla();
+}
+
+function actualizarContadoresCanales() {
+    const canales = {
+        todos: prospectosGlobal.length,
+        whatsapp: prospectosGlobal.filter(p => obtenerCanalProspecto(p) === 'WhatsApp').length,
+        instagram: prospectosGlobal.filter(p => obtenerCanalProspecto(p) === 'Instagram').length,
+        facebook: prospectosGlobal.filter(p => obtenerCanalProspecto(p) === 'Facebook').length
+    };
+    Object.entries(canales).forEach(([canal, cantidad]) => {
+        const contador = document.getElementById(`channel-count-${canal}`);
+        if (contador) contador.textContent = cantidad;
+    });
 }
 
 async function cambiarEstado(id, index, nuevoEstado) {
@@ -538,6 +583,12 @@ function enviarMensaje() {
     const mensaje = input ? input.value : '';
     if (mensaje.trim() === '') return;
 
+    const canal = obtenerCanalProspecto(prospecto);
+    if (canal === 'Instagram' || canal === 'Facebook') {
+        enviarMensajeMeta(prospecto, mensaje, input);
+        return;
+    }
+
     if(socket) {
         socket.emit('enviar_mensaje', {
             userId: crmUserId, 
@@ -545,6 +596,26 @@ function enviarMensaje() {
             mensaje: mensaje,
             prospecto_id: prospecto.id 
         });
+    }
+}
+
+async function enviarMensajeMeta(prospecto, mensaje, input) {
+    const boton = document.getElementById('btn-enviar');
+    if (boton) { boton.disabled = true; boton.textContent = 'Enviando...'; }
+    try {
+        const res = await fetchConToken(`/api/mensajes/${encodeURIComponent(prospecto.id)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mensaje })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudo enviar el mensaje');
+        agregarMensajeAlChat(mensaje, 'out');
+        if (input) input.value = '';
+    } catch (error) {
+        alert(error.message || 'Error al enviar mensaje por Meta.');
+    } finally {
+        if (boton) { boton.disabled = false; boton.textContent = 'Enviar'; }
     }
 }
 

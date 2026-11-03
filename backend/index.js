@@ -6,13 +6,52 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const cors = require('cors');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { createClient } = require('@supabase/supabase-js');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const axios = require('axios');
+const db = require('./db');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Modelos en orden de preferencia; se puede sobreescribir con GEMINI_MODELS="modelo1,modelo2" en .env
+const MODELOS_IA = (process.env.GEMINI_MODELS || 'gemini-3.8-flash,gemini-3.7-flash,gemini-3.5-flash,gemini-3.5-flash-lite')
+    .split(',').map(m => m.trim()).filter(Boolean);
+
+// Reintenta ante saturación (503/429/500) y pasa al siguiente modelo si el actual sigue fallando.
+async function generarConIA(prompt) {
+    let ultimoError;
+    let primerError;
+    for (const nombre of MODELOS_IA) {
+        const model = genAI.getGenerativeModel({ model: nombre });
+        for (let intento = 0; intento < 3; intento++) {
+            try {
+                const result = await model.generateContent(prompt);
+                return result.response.text();
+            } catch (err) {
+                ultimoError = err;
+                if (!primerError) primerError = err;
+                // 429 = cuota agotada: reintentar no sirve, pasamos al siguiente modelo
+                if (err.status === 429 || /\b429\b/.test(err.message || '')) break;
+                const temporal = [500, 502, 503, 504].includes(err.status) || /\b(500|502|503|504)\b/.test(err.message || '');
+                if (!temporal) {
+                    if (/\b404\b/.test(err.message || '')) break; // el modelo no existe: probar el siguiente
+                    throw err;
+                }
+                if (intento < 2) await new Promise(r => setTimeout(r, 1500 * (intento + 1)));
+            }
+        }
+        console.warn(`Modelo ${nombre} no disponible (${(ultimoError.message || '').slice(-90)}), probando el siguiente...`);
+    }
+    throw primerError || ultimoError;
+}
+db.cargar();
+db.sincronizarDesdeSheet()
+    .then(r => console.log(`Google Sheet sincronizado: ${r.importados} prospectos nuevos`))
+    .catch(e => console.error('No se pudo leer el Google Sheet:', e.message));
+
+// Errores internos de puppeteer/whatsapp-web.js (p. ej. al cerrar sesión) no deben tumbar el servidor
+process.on('unhandledRejection', (err) => console.error('Rechazo no controlado:', err && err.message ? err.message : err));
+process.on('uncaughtException', (err) => console.error('Excepción no controlada:', err && err.message ? err.message : err));
 
 const app = express();
 const server = http.createServer(app);
@@ -20,9 +59,109 @@ const io = new Server(server, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+    verify: (req, res, buffer) => {
+        if (req.path === '/webhooks/meta') req.rawBody = Buffer.from(buffer);
+    }
+}));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
+const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v25.0';
+const META_API_BASE = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+const META_INSTAGRAM_API_BASE = process.env.META_INSTAGRAM_API_BASE || META_API_BASE;
+
+function canalMeta(canal) {
+    const valor = String(canal || '').trim().toLowerCase();
+    if (valor === 'instagram') return 'Instagram';
+    if (valor === 'facebook') return 'Facebook';
+    return 'WhatsApp';
+}
+
+function verificarFirmaMeta(req) {
+    const appSecret = process.env.META_APP_SECRET;
+    const firma = req.get('x-hub-signature-256');
+    if (!appSecret || !firma || !req.rawBody) return false;
+    const esperada = `sha256=${crypto.createHmac('sha256', appSecret).update(req.rawBody).digest('hex')}`;
+    const actualBuffer = Buffer.from(firma);
+    const esperadaBuffer = Buffer.from(esperada);
+    return actualBuffer.length === esperadaBuffer.length && crypto.timingSafeEqual(actualBuffer, esperadaBuffer);
+}
+
+function prospectoPorCuentaSocial(canal, recipientId, accountId) {
+    return db.prospectos.listar().find(p =>
+        canalMeta(p.canal) === canal &&
+        p.social_recipient_id === recipientId &&
+        p.social_account_id === accountId
+    );
+}
+
+async function procesarWebhookMeta(payload) {
+    for (const entry of payload.entry || []) {
+        for (const evento of entry.messaging || []) {
+            const mensaje = evento.message;
+            if (!mensaje || mensaje.is_echo || !evento.sender?.id || !evento.recipient?.id) continue;
+
+            const canal = payload.object === 'instagram' ? 'Instagram' : 'Facebook';
+            const recipientId = String(evento.sender.id);
+            const accountId = String(evento.recipient.id);
+            const body = mensaje.text || (mensaje.attachments?.length ? '[Mensaje con archivo adjunto]' : '');
+            if (!body) continue;
+
+            let prospecto = prospectoPorCuentaSocial(canal, recipientId, accountId);
+            if (!prospecto) {
+                const usuarios = db.usuarios.listar();
+                const admin = usuarios.find(u => u.rol === 'admin');
+                if (!admin) throw new Error('No hay usuario administrador para asignar el lead social');
+                [prospecto] = db.prospectos.crear([{
+                    vendedor_id: admin.id,
+                    nombre_empresa: `${canal} ${recipientId}`,
+                    nicho: 'Lead entrante',
+                    contacto: recipientId,
+                    canal,
+                    social_recipient_id: recipientId,
+                    social_account_id: accountId,
+                    estado: 'Nuevo'
+                }]);
+                io.to(`sala_${admin.id}`).emit(`recargar_prospectos_${admin.id}`);
+            }
+
+            if (mensaje.mid && db.mensajes.existeProviderId(mensaje.mid)) continue;
+            db.mensajes.crear({
+                prospecto_id: prospecto.id,
+                mensaje: body,
+                tipo: 'in',
+                canal,
+                provider_id: mensaje.mid,
+                creado_en: evento.timestamp ? new Date(evento.timestamp).toISOString() : undefined
+            });
+            io.to(`sala_${prospecto.vendedor_id}`).emit(`nuevo_mensaje_${prospecto.vendedor_id}`, {
+                numero: recipientId,
+                body,
+                prospecto_id: prospecto.id,
+                canal
+            });
+        }
+    }
+}
+
+app.get('/webhooks/meta', (req, res) => {
+    const verifyToken = process.env.META_VERIFY_TOKEN;
+    if (!verifyToken) return res.status(503).send('Webhook Meta no configurado');
+    const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
+    if (mode === 'subscribe' && token === verifyToken && challenge) return res.status(200).send(challenge);
+    return res.sendStatus(403);
+});
+
+app.post('/webhooks/meta', async (req, res) => {
+    if (!verificarFirmaMeta(req)) return res.sendStatus(401);
+    try {
+        await procesarWebhookMeta(req.body);
+        res.sendStatus(200);
+    } catch (error) {
+        console.error('Error procesando webhook de Meta:', error.message);
+        res.sendStatus(500);
+    }
+});
 
 // 🧠 MOTOR MULTI-WHATSAPP MEJORADO (CON MEMORIA DE QR)
 
@@ -97,15 +236,55 @@ function iniciarWhatsAppParaUsuario(userId, socket = null) {
         } catch(e) {
             console.error("Error limpiando memoria:", e.message);
         }
+        // Sesión cerrada desde el celular: reiniciamos para generar un QR nuevo
+        if (reason === 'LOGOUT') {
+            setTimeout(() => iniciarWhatsAppParaUsuario(userId), 3000);
+        }
     });
 
     client.on('message', async msg => {
         procesarMensajeEntrante(msg, userId, client);
     });
 
-    client.initialize();
+    client.initialize().catch(err => {
+        console.error(`No se pudo iniciar WhatsApp para ${userId}:`, err.message);
+        waClients.delete(userId);
+        waStatuses.set(userId, 'Error iniciando WhatsApp');
+        io.emit(`wa_status_${userId}`, 'Error iniciando WhatsApp');
+    });
     waClients.set(userId, client);
     return client;
+}
+
+// Trae los últimos mensajes del chat desde WhatsApp (incluye lo escrito desde el celular) y los guarda localmente.
+async function sincronizarHistorialWhatsApp(userId, prospecto) {
+    const client = waClients.get(userId);
+    if (!client || waStatuses.get(userId) !== 'Conectado') return 0;
+    try {
+        const numero = prospecto.contacto || '';
+        let chatId = numero;
+        if (!numero.includes('@lid')) {
+            const digitos = numero.replace(/\D/g, '');
+            if (!digitos) return 0;
+            const valido = await client.getNumberId(digitos);
+            if (!valido) return 0;
+            chatId = valido._serialized;
+        }
+        const chat = await client.getChatById(chatId);
+        const msgs = await chat.fetchMessages({ limit: 200 });
+        const lista = msgs
+            .filter(m => m.body && m.type === 'chat')
+            .map(m => ({
+                wa_id: m.id._serialized,
+                mensaje: m.body,
+                tipo: m.fromMe ? 'out' : 'in',
+                creado_en: new Date(m.timestamp * 1000).toISOString()
+            }));
+        return db.mensajes.importar(prospecto.id, lista);
+    } catch (e) {
+        console.error('No se pudo sincronizar el historial:', e.message);
+        return 0;
+    }
 }
 
 async function procesarMensajeEntrante(msg, userId, client) {
@@ -117,8 +296,7 @@ async function procesarMensajeEntrante(msg, userId, client) {
     }
 
     try {
-        const { data: prospectos, error } = await supabase.from('prospectos').select('id, contacto, estado').eq('vendedor_id', userId);
-        if (error) throw error;
+        const prospectos = db.prospectos.listar(userId);
 
         let prospecto = prospectos.find(p => {
             const telLimpiado = (p.contacto || '').replace(/\D/g, ''); 
@@ -128,39 +306,35 @@ async function procesarMensajeEntrante(msg, userId, client) {
         
         if (!prospecto) {
             creandoProspectos.add(numeroLimpio);
-            const { data: nuevoProspecto, error: insertError } = await supabase.from('prospectos').insert([{
-                vendedor_id: userId, 
-                nombre_empresa: 'Lead Entrante',
-                nicho: 'Sin definir',
-                contacto: numeroLimpio, 
-                estado: 'Nuevo'
-            }]).select().single(); 
-            
-            creandoProspectos.delete(numeroLimpio);
-            
-            if (!insertError) {
-                prospecto = nuevoProspecto;
-                io.emit(`recargar_prospectos_${userId}`); 
-            } else {
-                return; 
+            try {
+                [prospecto] = db.prospectos.crear([{
+                    vendedor_id: userId, 
+                    nombre_empresa: 'Lead Entrante',
+                    nicho: 'Sin definir',
+                    contacto: numeroLimpio, 
+                    estado: 'Nuevo',
+                    canal: 'WhatsApp'
+                }]);
+            } finally {
+                creandoProspectos.delete(numeroLimpio);
             }
+            io.emit(`recargar_prospectos_${userId}`); 
         }
 
         if (prospecto && prospecto.id) {
-            await supabase.from('mensajes').insert([{
-                prospecto_id: prospecto.id,
+            db.mensajes.importar(prospecto.id, [{
+                wa_id: msg.id._serialized,
                 mensaje: msg.body,
-                tipo: 'in'
+                tipo: 'in',
+                creado_en: new Date(msg.timestamp * 1000).toISOString()
             }]);
 
             try {
-                const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
                 const promptClasificacion = `Eres experto en ventas. Cliente dice: "${msg.body}". Clasifica en UNA opción: "Contactado", "En Negociación", "Cliente Cerrado", "No Interesado", "MANTENER". Devuelve SOLO la opción.`;
-                const result = await model.generateContent(promptClasificacion);
-                let nuevoEstado = result.response.text().trim();
+                let nuevoEstado = (await generarConIA(promptClasificacion)).trim();
                 const estadosValidos = ['Contactado', 'En Negociación', 'Cliente Cerrado', 'No Interesado'];
                 if (estadosValidos.includes(nuevoEstado) && nuevoEstado !== prospecto.estado) {
-                    await supabase.from('prospectos').update({ estado: nuevoEstado }).eq('id', prospecto.id);
+                    db.prospectos.actualizar(prospecto.id, { estado: nuevoEstado });
                     io.emit('estado_actualizado', { id: prospecto.id, nuevoEstado: nuevoEstado });
                 }
             } catch (iaError) {}
@@ -176,8 +350,8 @@ async function procesarMensajeEntrante(msg, userId, client) {
 app.post('/api/login', async (req, res) => {
     try {
         const { usuario, password } = req.body;
-        const { data, error } = await supabase.from('usuarios').select('*').eq('usuario', usuario).single();
-        if (error || !data) return res.status(401).json({ success: false, error: 'Usuario no encontrado' });
+        const data = db.usuarios.porNombre(usuario);
+        if (!data) return res.status(401).json({ success: false, error: 'Usuario no encontrado' });
 
         if (data.password === password) {
             const token = jwt.sign({ id: data.id, usuario: data.usuario, rol: data.rol }, process.env.JWT_SECRET, { expiresIn: '12h' });
@@ -231,9 +405,10 @@ app.get('/api/verificar-numero/:numero', verificarToken, async (req, res) => {
 
 app.post('/api/usuarios', verificarToken, soloAdmin, async (req, res) => {
     const { usuario, password, rol } = req.body;
-    const { data, error } = await supabase.from('usuarios').insert([{ usuario, password, rol }]).select().single();
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, data });
+    try {
+        const data = db.usuarios.crear({ usuario, password, rol });
+        res.json({ success: true, data });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.put('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
@@ -241,15 +416,15 @@ app.put('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
     const { usuario, password, rol } = req.body;
     let updateData = { usuario, rol };
     if (password) updateData.password = password; 
-    const { error } = await supabase.from('usuarios').update(updateData).eq('id', id);
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
+    try {
+        db.usuarios.actualizar(id, updateData);
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
     const { id } = req.params;
-    const { error } = await supabase.from('usuarios').delete().eq('id', id);
-    if (error) return res.status(500).json({ error: error.message });
+    db.usuarios.eliminar(id);
     res.json({ success: true });
 });
 
@@ -258,14 +433,7 @@ app.delete('/api/usuarios/:id', verificarToken, soloAdmin, async (req, res) => {
 // ==========================================
 app.get('/api/prospectos', verificarToken, async (req, res) => {
     try {
-        let query = supabase.from('prospectos').select('*, usuarios!vendedor_id(usuario)').order('creado_en', { ascending: false });
-        
-        if (req.user.rol !== 'admin') {
-            query = query.eq('vendedor_id', req.user.id);
-        }
-        
-        const { data, error } = await query;
-        if (error) throw error;
+        const data = db.prospectos.listar(req.user.rol === 'admin' ? null : req.user.id);
         
         const prospectosAdaptados = data.map(p => ({
             id: p.id,
@@ -277,8 +445,12 @@ app.get('/api/prospectos', verificarToken, async (req, res) => {
             'Observaciones': p.observaciones,
             'Mensaje de Acercamiento': p.mensaje_acercamiento,
             'Estado': p.estado,
-            'Vendedor': (p.usuarios && p.usuarios.usuario) ? p.usuarios.usuario : 'Sin asignar', 
-            'vendedor_id': p.vendedor_id
+            'Canal': canalMeta(p.canal),
+            'Vendedor': p.vendedor || 'Sin asignar', 
+            'vendedor_id': p.vendedor_id,
+            canal: canalMeta(p.canal),
+            social_recipient_id: p.social_recipient_id,
+            social_account_id: p.social_account_id
         }));
         res.json(prospectosAdaptados);
     } catch (error) { res.status(500).json({ error: 'Error cargando datos' }); }
@@ -287,18 +459,67 @@ app.get('/api/prospectos', verificarToken, async (req, res) => {
 app.post('/api/actualizar-estado', verificarToken, async (req, res) => {
     try {
         const { id, estado } = req.body; 
-        const { error } = await supabase.from('prospectos').update({ estado: estado }).eq('id', id);
-        if (error) throw error;
+        db.prospectos.actualizar(id, { estado });
         res.json({ success: true });
     } catch (error) { res.status(500).json({ error: 'Error interno' }); }
 });
 
 app.get('/api/mensajes/:prospecto_id', verificarToken, async (req, res) => {
     try {
-        const { data, error } = await supabase.from('mensajes').select('*').eq('prospecto_id', req.params.prospecto_id).order('creado_en', { ascending: true });
-        if (error) throw error;
-        res.json(data);
+        const prospecto = db.prospectos.listar(req.user.rol === 'admin' ? null : req.user.id)
+            .find(p => p.id === req.params.prospecto_id);
+        if (!prospecto) return res.status(404).json({ error: 'Prospecto no encontrado' });
+        if (canalMeta(prospecto.canal) === 'WhatsApp') {
+            await sincronizarHistorialWhatsApp(req.user.id, prospecto);
+        }
+        res.json(db.mensajes.listar(prospecto.id));
     } catch (error) { res.status(500).json({ error: 'Error cargando historial' }); }
+});
+
+app.post('/api/mensajes/:prospecto_id', verificarToken, async (req, res) => {
+    try {
+        const prospecto = db.prospectos.listar(req.user.rol === 'admin' ? null : req.user.id)
+            .find(p => p.id === req.params.prospecto_id);
+        if (!prospecto) return res.status(404).json({ error: 'Prospecto no encontrado' });
+        const canal = canalMeta(prospecto.canal);
+        if (!['Instagram', 'Facebook'].includes(canal)) {
+            return res.status(400).json({ error: 'Este endpoint solo envía mensajes de Meta' });
+        }
+        const mensaje = typeof req.body.mensaje === 'string' ? req.body.mensaje.trim() : '';
+        if (!mensaje) return res.status(400).json({ error: 'El mensaje no puede estar vacío' });
+        if (!prospecto.social_recipient_id || !prospecto.social_account_id) {
+            return res.status(400).json({ error: 'Este contacto no tiene una conversación de Meta vinculada' });
+        }
+
+        const token = canal === 'Instagram'
+            ? process.env.META_INSTAGRAM_ACCESS_TOKEN || process.env.META_PAGE_ACCESS_TOKEN
+            : process.env.META_PAGE_ACCESS_TOKEN;
+        if (!token) return res.status(503).json({ error: `Falta configurar el token de Meta para ${canal}` });
+
+        const apiBase = canal === 'Instagram' ? META_INSTAGRAM_API_BASE : META_API_BASE;
+        const respuesta = await axios.post(
+            `${apiBase}/${encodeURIComponent(prospecto.social_account_id)}/messages`,
+            {
+                recipient: { id: prospecto.social_recipient_id },
+                message: { text: mensaje },
+                ...(canal === 'Facebook' ? { messaging_type: 'RESPONSE' } : {})
+            },
+            { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+        );
+        const guardado = db.mensajes.crear({
+            prospecto_id: prospecto.id,
+            mensaje,
+            tipo: 'out',
+            canal,
+            provider_id: respuesta.data && respuesta.data.message_id
+        });
+        res.json({ success: true, data: guardado });
+    } catch (error) {
+        const detalle = error.response?.data?.error?.message || error.message;
+        console.error('Error enviando mensaje por Meta:', detalle);
+        res.status(error.response?.status && error.response.status < 500 ? 400 : 502)
+            .json({ error: `Meta no pudo enviar el mensaje: ${detalle}` });
+    }
 });
 
 // 🛡️ CORRECCIÓN: Ruta segura para verificación de números
@@ -323,16 +544,17 @@ app.get('/api/verificar-numero/:numero', verificarToken, async (req, res) => {
 
 app.post('/api/generar-prospectos', verificarToken, async (req, res) => {
     try {
-        const { nicho, ciudad } = req.body;
-        const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' }); 
+        const { nicho, ciudad, canal = 'WhatsApp' } = req.body;
         const prompt = `Busca 3 negocios B2B en ${nicho} en ${ciudad}. Devuelve JSON estricto: [{"nombre_empresa": "X", "nicho": "${nicho}", "contacto": "+5730000", "correo": "N/A", "direccion": "X", "observaciones": "X", "mensaje_acercamiento": "Hola", "estado": "Nuevo"}]`;
-        const result = await model.generateContent(prompt);
-        const nuevosProspectos = JSON.parse(result.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
+        const texto = await generarConIA(prompt);
+        const nuevosProspectos = JSON.parse(texto.replace(/```json/g, '').replace(/```/g, '').trim());
 
-        nuevosProspectos.forEach(p => p.vendedor_id = req.user.id);
+        nuevosProspectos.forEach(p => {
+            p.vendedor_id = req.user.id;
+            p.canal = canal;
+        });
 
-        const { error } = await supabase.from('prospectos').insert(nuevosProspectos);
-        if (error) throw error;
+        db.prospectos.crear(nuevosProspectos);
         res.json({ success: true });
     } catch (error) { res.status(500).json({ success: false, error: error.message }); }
 });
@@ -340,15 +562,12 @@ app.post('/api/generar-prospectos', verificarToken, async (req, res) => {
 app.post('/api/sugerir-respuesta', verificarToken, async (req, res) => {
     try {
         const { prospecto_id } = req.body;
-        const { data: historial, error } = await supabase.from('mensajes').select('mensaje, tipo').eq('prospecto_id', prospecto_id).order('creado_en', { ascending: true }).limit(10);
-        if (error) throw error;
+        const historial = db.mensajes.listar(prospecto_id, 10);
         if (!historial || historial.length === 0) return res.json({ sugerencia: "¡Hola! ¿En qué podemos ayudarte?" });
 
         const chatContext = historial.map(m => m.tipo === 'in' ? `Cliente: ${m.mensaje}` : `Vendedor: ${m.mensaje}`).join('\n');
-        const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' }); 
         const prompt = `Eres experto en ventas. Lee este chat:\n\n${chatContext}\n\nEscribe la próxima respuesta. Solo texto.`;
-        const result = await model.generateContent(prompt);
-        res.json({ sugerencia: result.response.text().trim() });
+        res.json({ sugerencia: (await generarConIA(prompt)).trim() });
     } catch (error) { res.status(500).json({ error: 'Fallo al conectar con IA.' }); }
 });
 
@@ -358,9 +577,7 @@ app.delete('/api/prospectos/:id', verificarToken, async (req, res) => {
             return res.status(403).json({ error: 'No tienes permisos para eliminar prospectos.' });
         }
         const { id } = req.params;
-        await supabase.from('mensajes').delete().eq('prospecto_id', id);
-        const { error } = await supabase.from('prospectos').delete().eq('id', id);
-        if (error) throw error;
+        db.prospectos.eliminar(id);
         res.json({ success: true });
     } catch (error) { res.status(500).json({ error: 'Error interno.' }); }
 });
@@ -386,14 +603,15 @@ io.on('connection', (socket) => {
                 chatId = contactoValido._serialized;
             }
             
-            await client.sendMessage(chatId, data.mensaje);
+            const enviado = await client.sendMessage(chatId, data.mensaje);
             
             if (data.prospecto_id) {
-                await supabase.from('mensajes').insert([{
+                db.mensajes.crear({
                     prospecto_id: data.prospecto_id,
                     mensaje: data.mensaje,
-                    tipo: 'out'
-                }]);
+                    tipo: 'out',
+                    wa_id: enviado && enviado.id ? enviado.id._serialized : undefined
+                });
             }
             socket.emit('mensaje_enviado', { status: 'ok', mensaje: data.mensaje, numero: data.numero });
         } catch (error) { socket.emit('mensaje_enviado', { status: 'error', error: 'Error interno.' }); }
